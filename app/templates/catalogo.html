@@ -1,0 +1,148 @@
+{% extends 'layout.html' %}
+
+{% block css %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalogo.css') }}">
+
+{% endblock %}
+
+{% block content %}
+<div class="filtros">
+  <ul class="nav nav-tabs" id="tabsCatalogo" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="tab1-tab" data-bs-toggle="tab" data-bs-target="#tab1" type="button" role="tab">Pestaña 1</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab2-tab" data-bs-toggle="tab" data-bs-target="#tab2" type="button" role="tab">Pestaña 2</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab3-tab" data-bs-toggle="tab" data-bs-target="#tab3" type="button" role="tab">Pestaña 3</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab4-tab" data-bs-toggle="tab" data-bs-target="#tab4" type="button" role="tab">Pestaña 4</button>
+    </li>
+  </ul>
+
+</div>
+
+<div class="tab-content px-5" id="tabsCatalogoContent">
+    <div class="tab-pane fade show active" id="tab1" role="tabpanel">
+        <div class="tab-content px-5" id="tabsCategoriaContent">
+            <div class="tab-pane fade show active" id="subtab1" role="tabpanel">
+                <div class="card" style="width: 100%;">
+                    <img src="https://www.svgrepo.com/show/508699/landscape-placeholder.svg" class="card-img-top selected" alt="Imagen de ejemplo">
+                    <div class="card-body">
+                        <h2 class="card-title">Nombre modelo</h2>
+                        <h6>Precio $$</h6>
+                        <p class="card-text">Este es un texto de ejemplo para describir el contenido del modelo. </p>
+                        <a href="#" class="btn btn-outline-primary">Probarlos</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade show" id="subtab2" role="tabpanel">
+                <div class="card" style="width: 100%;">
+                    <img src="https://www.svgrepo.com/show/508699/landscape-placeholder.svg" class="card-img-top selected" alt="Imagen de ejemplo">
+                    <div class="card-body">
+                        <h2 class="card-title">Nombre modelo 2</h2>
+                        <h6>Precio $$</h6>
+                        <p class="card-text">Este es un texto de ejemplo para describir el contenido del modelo. </p>
+                        <a href="#" class="btn btn-outline-primary">Probarlos</a>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-pane fade show" id="subtab3" role="tabpanel">
+                <div class="card" style="width: 100%;">
+                    <img src="https://www.svgrepo.com/show/508699/landscape-placeholder.svg" class="card-img-top selected" alt="Imagen de ejemplo">
+                    <div class="card-body">
+                        <h2 class="card-title">Nombre modelo 3</h2>
+                        <h6>Precio $$</h6>
+                        <p class="card-text">Este es un texto de ejemplo para describir el contenido del modelo. </p>
+                        <a href="#" class="btn btn-outline-primary">Probarlos</a>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-pane fade show" id="subtab4" role="tabpanel">
+                <div class="card" style="width: 100%;">
+                    <img src="https://www.svgrepo.com/show/508699/landscape-placeholder.svg" class="card-img-top selected" alt="Imagen de ejemplo">
+                    <div class="card-body">
+                        <h2 class="card-title">Nombre modelo 4</h2>
+                        <h6>Precio $$</h6>
+                        <p class="card-text">Este es un texto de ejemplo para describir el contenido del modelo. </p>
+                        <a href="#" class="btn btn-outline-primary">Probarlos</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="slider-container">
+            <button class="slider-arrow left" id="arrowLeft">&#10094;</button>
+
+            <div class="tabsCategoria-wrapper">
+                <ul class="nav nav-tabs tabsCategoria py-3" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="subtab1-tab" data-bs-toggle="tab" data-bs-target="#subtab1" type="button" role="tab">
+                    <img src="https://www.svgrepo.com/show/508699/landscape-placeholder.svg" class="card-img-top" style="height: 60px;" alt="Imagen 1">
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="subtab2-tab" data-bs-toggle="tab" data-bs-target="#subtab2" type="button" role="tab">
+                    <img src="https://www.svgrepo.com/show/508699/landscape-placeholder.svg" class="card-img-top" style="height: 60px;" alt="Imagen 2">
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="subtab3-tab" data-bs-toggle="tab" data-bs-target="#subtab3" type="button" role="tab">
+                    <img src="https://www.svgrepo.com/show/508699/landscape-placeholder.svg" class="card-img-top" style="height: 60px;" alt="Imagen 3">
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="subtab4-tab" data-bs-toggle="tab" data-bs-target="#subtab4" type="button" role="tab">
+                    <img src="https://www.svgrepo.com/show/508699/landscape-placeholder.svg" class="card-img-top" style="height: 60px;" alt="Imagen 4">
+                    </button>
+                </li>
+                
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="subtab3-tab" data-bs-toggle="tab" data-bs-target="#subtab3" type="button" role="tab">
+                    <img src="https://www.svgrepo.com/show/508699/landscape-placeholder.svg" class="card-img-top" style="height: 60px;" alt="Imagen 3">
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="subtab4-tab" data-bs-toggle="tab" data-bs-target="#subtab4" type="button" role="tab">
+                    <img src="https://www.svgrepo.com/show/508699/landscape-placeholder.svg" class="card-img-top" style="height: 60px;" alt="Imagen 4">
+                    </button>
+                </li>
+                </ul>
+            </div>
+
+            <button class="slider-arrow right" id="arrowRight">&#10095;</button>
+        </div>
+
+    
+    </div>
+    <div class="tab-pane fade" id="tab2" role="tabpanel">Contenido de la pestaña 2.</div>
+    <div class="tab-pane fade" id="tab3" role="tabpanel">Contenido de la pestaña 3.</div>
+    <div class="tab-pane fade" id="tab4" role="tabpanel">Contenido de la pestaña 4.</div>
+</div>
+
+
+<div class="position-fixed bottom-0 start-0 w-100 qrContainer">
+    <p>Escaneá el QR para navegar por el catálogo y probarte los modelos</p>
+</div>
+
+
+
+
+<script>
+  const wrapper = document.querySelector('.tabsCategoria-wrapper');
+  const btnLeft = document.getElementById('arrowLeft');
+  const btnRight = document.getElementById('arrowRight');
+
+  btnLeft.addEventListener('click', () => {
+    wrapper.scrollBy({ left: -200, behavior: 'smooth' });
+  });
+
+  btnRight.addEventListener('click', () => {
+    wrapper.scrollBy({ left: 200, behavior: 'smooth' });
+  });
+</script>
+
+{% endblock %}
