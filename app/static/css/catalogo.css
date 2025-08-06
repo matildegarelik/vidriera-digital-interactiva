@@ -1,23 +1,22 @@
 div.filtros{
-    background-color: #9757A8;
+    background-color: var(--secondary-color);
     padding: 20px 20px 0px 20px;
 }
 
 .nav-tabs .nav-link {
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--background-color);
     border-bottom: none;
     border-radius: 0.25rem 0.25rem 0 0;
-    background-color: #f8f9fa;
     color: #000
 }
 
 .nav-tabs .nav-link.active {
-    background-color: #f0dcec;
-    border-bottom: 1px solid #f0dcec;
+    background-color: var(--light-color);
+    border-bottom: 1px solid var(--light-color);
 }
 
 .tab-content {
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--background-color);
     border-top: none;
     padding: 1rem;
 }
@@ -31,8 +30,8 @@ div.filtros{
 }
 
 .tabsCategoria.nav-tabs .nav-link.active {
-    border: 2px solid #9757A8;
-    background-color: #fff;
+    border: 2px solid var(--secondary-color);
+    background-color: var(--background-color);
 }
 
 .slider-container {
@@ -90,7 +89,7 @@ div.filtros{
 }
 
 .qrContainer{
-    background-color: #AA87D9;
+    background-color: var(--main-color);
     min-height: 200px;
 }
 .qrContainer p{

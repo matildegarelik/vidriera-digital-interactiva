@@ -1,4 +1,10 @@
+@import url('variables.css');
 header{
-    background-color: #AA87D9;
+    background-color: var(--main-color);
     width: 100%;
+}
+
+.btn-primary{
+    background-color: var(--main-color);
+    border-color: var(--main-color)
 }
