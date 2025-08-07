@@ -6,8 +6,93 @@
 {% endblock %}
 
 {% block content %}
+<div class="container">
+    <h1>Benvenuto!</h1>
+    <a href="/logout" class="btn btn-outline-primary" style="float:right">Logout</a>
+    <a href="{{ url_for('main.agregar_lente') }}" class="btn btn-primary" style="float:right">Agregar</a>
+    <h3>Modelos de lentes</h3>
+    <table class="table">
+        <thead>
+            <tr>
+                <th></th>
+                <th>ID</th>
+                <th>Nombre</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for lente in lentes %}
+            <tr>
+                <td><img src="{{lente.imagen}}" style="height: 35px; width: 35px;;"></td>
+                <td>{{lente.id}}</td>
+                <td>{{lente.nombre}}</td>
+                <td>
+                    <a href="{{ url_for('main.lente_detalle', lente_id=lente.id) }}" class="btn btn-sm btn-outline-secondary" title="Editar">
+                        <i class="fas fa-pencil-alt"></i>
+                    </a>
+                    <button class="btn btn-sm btn-outline-info toggle-visible" data-id="{{ lente.id }}" title="Visibilidad">
+                        {% if lente.visible %}
+                            <i class="fas fa-eye"></i>
+                        {% else %}
+                            <i class="fas fa-eye-slash"></i>
+                        {% endif %}
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger delete-lente" data-id="{{ lente.id }}" title="Eliminar">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 
-<h1>Benvenuto!</h1>
-<a href="/logout" class="btn btn-primary">Logout</a>
+</div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.querySelectorAll('.toggle-visible').forEach(button => {
+        button.addEventListener('click', () => {
+            const id = button.dataset.id;
+            fetch(`/toggle_visible/${id}`, {
+                method: 'POST'
+            })
+            .then(res => res.json())
+            .then(data => {
+                const icon = button.querySelector('i');
+                icon.className = data.new_visible ? 'fas fa-eye' : 'fas fa-eye-slash';
+            });
+        });
+    });
+
+    document.querySelectorAll('.delete-lente').forEach(button => {
+        button.addEventListener('click', () => {
+            const id = button.dataset.id;
+
+            Swal.fire({
+                title: '¿Estás segura/o?',
+                text: "¡Esta acción no se puede deshacer!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Sí, borrar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch(`/delete_lente/${id}`, {
+                        method: 'DELETE'
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            button.closest('tr').remove();
+                            Swal.fire('Eliminado', 'El modelo fue eliminado.', 'success');
+                        }
+                    });
+                }
+            });
+        });
+    });
+</script>
 {% endblock %}

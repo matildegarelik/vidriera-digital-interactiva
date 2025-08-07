@@ -1,0 +1,22 @@
+{% extends 'layout.html' %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Editar Modelo</h2>
+    <form method="POST" action="{{ url_for('main.editar_lente', lente_id=lente.id) }}">
+        <div class="mb-3">
+            <label class="form-label">Nombre</label>
+            <input type="text" name="nombre" class="form-control" value="{{ lente.nombre }}" required>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">URL de imagen</label>
+            <input type="text" name="imagen" class="form-control" value="{{ lente.imagen }}">
+        </div>
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="visible" id="visibleCheck" {% if lente.visible %}checked{% endif %}>
+            <label class="form-check-label" for="visibleCheck">Visible</label>
+        </div>
+        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+        <a href="{{ url_for('main.home_admin') }}" class="btn btn-secondary">Volver</a>
+    </form>
+</div>
+{% endblock %}
