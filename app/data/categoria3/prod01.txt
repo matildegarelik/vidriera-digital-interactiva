@@ -1,0 +1,4 @@
+nombre: Modelo X
+precio: 1500
+aclaracion: 12 cuotas sin interés
+descripcion: Este es un texto para ver como funciona. Mimimimimiimi

@@ -1,0 +1,4 @@
+nombre: Modelo X6
+precio: 2000
+aclaracion: 
+descripcion:Mimimimi

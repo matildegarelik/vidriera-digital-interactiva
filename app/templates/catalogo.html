@@ -1,6 +1,27 @@
 {% extends 'layout.html' %}
 
 {% block content %}
-<p> Hola </p>
+<div class="bloque_botones_categorias">
+    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria1') }}">Categoria 1</a>
+    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria2') }}">Categoria 2</a>
+    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria3') }}">Categoria 3</a>
+    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria4') }}">Categoria 4</a>
+</div>
+{% if productos %}
+<div class="producto">
+        <div class="Imagen_producto">
+            <img id="imagen_principal" src = "{{productos[0].main_img}}">
+        </div>
+    <div class="descripcion">
+        <h2 id="nombre_prod">{{productos[0].datos.nombre}}</h2>
+        <h3 id="precio_prod">{{productos[0].datos.precio}}</h3>
+        <p id="aclaracion_prod">{{productos[0].datos.aclaracion}}</p>
+        <p id="descripcion_prod">{{productos[0].datos.descripcion}}</p>
+    </div>
+</div>
 
+<div class="selecctor_producto">
+</div>
+
+{% endif %}
 {% endblock %}

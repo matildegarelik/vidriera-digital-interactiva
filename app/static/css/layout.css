@@ -1,8 +1,44 @@
+body{
+    margin: 0;
+    padding: 0;
+}
 h1{
     color: red
+}
+
+h2{
+    font-family: "Montserrat";
+}
+h3{
+    font-family: "Montserrat";
 }
 
 p{
     font-family: "Montserrat";
     font-weight: 400;
+}
+
+
+/*--------------------Clases Catalogo Digital--------------------*/
+.bloque_botones_categorias{
+    padding: 15px 10px 0px 10px;
+    background-color: #9757A8;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+.boton_categoria{
+    font-family: "Montserrat";
+    font-weight: 500;
+    color: white;  
+
+    padding: 5px;
+    background: none;
+    border: none;
+
+}
+.boton_categoria:not(:last-child) { /*esto hace q la linea no este en el ultimo*/
+    border-right: 1px solid white;  /* Línea divisoria */
+    margin-right: 10px;              
+    padding-right: 10px;           
 }

@@ -1,0 +1,4 @@
+nombre: Modelo X4
+precio: 2000
+aclaracion: 
+descripcion:Mimimimi
