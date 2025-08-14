@@ -9,7 +9,7 @@
 </div>
 {% if productos %}
 <div class="producto">
-        <div class="Imagen_producto">
+        <div class="imagen_producto">
             <img id="imagen_principal" src = "{{productos[0].main_img}}">
         </div>
     <div class="descripcion">
@@ -20,7 +20,11 @@
     </div>
 </div>
 
-<div class="selecctor_producto">
+<div class="selector_producto">
+    {% for producto in productos%}
+        <img class="imagen_selector" src="{{producto.main_img}}">
+    {% endfor %}
+    
 </div>
 
 {% endif %}

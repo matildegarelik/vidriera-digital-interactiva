@@ -20,8 +20,8 @@ p{
 
 
 /*--------------------Clases Catalogo Digital--------------------*/
-.bloque_botones_categorias{
-    padding: 15px 10px 0px 10px;
+.bloque_botones_categorias{ /*ver video en 10:00:00 para mejorar esto*/
+    padding: 15px 0px 0px 0px;
     background-color: #9757A8;
     width: 100%;
     display: flex;
@@ -41,4 +41,51 @@ p{
     border-right: 1px solid white;  /* Línea divisoria */
     margin-right: 10px;              
     padding-right: 10px;           
+}
+
+.producto{ /*este es el div que contiene la imagen principal y su descripcion*/
+    position: relative;
+}
+
+.imagen_producto{/*esta es la imagen principal*/
+    position: relative;
+    margin: auto;
+    margin-top: 2%;
+    width: 90%;
+    aspect-ratio: 1/1;
+    /*
+    width: min(90%, 60vh);
+    height: min(90vw, 60%);
+    overflow: hidden;*/
+}
+
+.imagen_producto img{
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /*recorta centrando la imagen*/
+    object-position: center;
+
+}
+
+.descripcion{
+    margin-left: 15%;
+    width: 70%;
+}
+
+.selector_producto{
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2%;
+}
+
+
+.imagen_selector{
+    width: 15%;
+    aspect-ratio: 1/1;
+   /* margin-right: 2%;
+    margin-left: 2%;*/
+    margin-top: 20px;
 }
