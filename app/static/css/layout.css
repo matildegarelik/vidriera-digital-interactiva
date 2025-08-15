@@ -67,9 +67,32 @@ p{
 
 }
 
+.bloque_flecha_descripcion{
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
 .descripcion{
-    margin-left: 15%;
     width: 70%;
+}
+
+.flecha_derecha {
+    width: 0;
+    height: 0;
+    border-top: 15px solid transparent;
+    border-bottom: 15px solid transparent;
+    border-left: 20px solid black; /* color de la flecha */
+    margin-left: 5%;
+}
+
+.flecha_izquierda {
+    width: 0;
+    height: 0;
+    border-top: 15px solid transparent;
+    border-bottom: 15px solid transparent;
+    border-right: 20px solid black;
+    margin-right: 5%;
 }
 
 .selector_producto{

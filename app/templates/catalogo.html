@@ -2,27 +2,39 @@
 
 {% block content %}
 <div class="bloque_botones_categorias">
-    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria1') }}">Categoria 1</a>
-    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria2') }}">Categoria 2</a>
-    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria3') }}">Categoria 3</a>
-    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria4') }}">Categoria 4</a>
+    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria1', indice_central=0) }}">Categoria 1</a>
+    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria2', indice_central=0) }}">Categoria 2</a>
+    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria3', indice_central=0) }}">Categoria 3</a>
+    <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria4', indice_central=0) }}">Categoria 4</a>
 </div>
 {% if productos %}
 <div class="producto">
         <div class="imagen_producto">
-            <img id="imagen_principal" src = "{{productos[0].main_img}}">
+            <img id="imagen_principal" src = "{{productos[indice_central].main_img}}">
         </div>
-    <div class="descripcion">
-        <h2 id="nombre_prod">{{productos[0].datos.nombre}}</h2>
-        <h3 id="precio_prod">{{productos[0].datos.precio}}</h3>
-        <p id="aclaracion_prod">{{productos[0].datos.aclaracion}}</p>
-        <p id="descripcion_prod">{{productos[0].datos.descripcion}}</p>
+    <div class = "bloque_flecha_descripcion">
+        {%if indice_central-1 > -1%}
+            <a class ="flecha_izquierda"  href="{{url_for('main.catalogo', categoria=categoria, indice_central=indice_central-1) }}"></a>
+        {%else%}
+            <a class="flecha_izquierda" href="{{ url_for('main.catalogo', categoria=categoria, indice_central=productos|length - 1) }}"></a>
+        {%endif%}
+        <div class="descripcion">
+            <h2 id="nombre_prod">{{productos[indice_central].datos.nombre}}</h2>
+            <h3 id="precio_prod">{{productos[indice_central].datos.precio}}</h3>
+            <p id="aclaracion_prod">{{productos[indice_central].datos.aclaracion}}</p>
+            <p id="descripcion_prod">{{productos[indice_central].datos.descripcion}}</p>
+        </div>
+        {%if indice_central+1 < productos|length + 1%}
+            <a class ="flecha_derecha"  href="{{url_for('main.catalogo', categoria=categoria, indice_central=indice_central+1) }}"></a>
+        {%else%}
+            <a class="flecha_derecha" href="{{ url_for('main.catalogo', categoria=categoria, indice_central=0) }}"></a>
+        {%endif%} 
     </div>
 </div>
 
 <div class="selector_producto">
-    {% for producto in productos%}
-        <img class="imagen_selector" src="{{producto.main_img}}">
+    {% for imagen in selector%}
+        <img class="imagen_selector" src="{{imagen}}">
     {% endfor %}
     
 </div>
