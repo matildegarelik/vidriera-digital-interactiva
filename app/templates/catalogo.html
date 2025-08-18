@@ -1,5 +1,11 @@
 {% extends 'layout.html' %}
 
+{% block header %}
+    <div class="bloque_header">
+        <img id="logo_optica" src="{{ url_for('static', filename='logo-optica.png') }}" alt="Logo Optica Mutual Ingenieria">
+    </div>
+{% endblock %}
+
 {% block content %}
 <div class="bloque_botones_categorias">
     <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria1', indice_central=0) }}">Categoria 1</a>
@@ -8,6 +14,7 @@
     <a class="boton_categoria" href="{{url_for('main.catalogo', categoria='categoria4', indice_central=0) }}">Categoria 4</a>
 </div>
 {% if productos %}
+
 <div class="producto">
         <div class="imagen_producto">
             <img id="imagen_principal" src = "{{productos[indice_central].main_img}}">

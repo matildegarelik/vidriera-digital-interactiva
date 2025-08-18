@@ -1,7 +1,20 @@
+
 body{
     margin: 0;
     padding: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 auto; 
 }
+header { flex: 0 0 auto; }
+main{
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+footer { flex: 0 0 auto; }
+
 h1{
     color: red
 }
@@ -20,6 +33,17 @@ p{
 
 
 /*--------------------Clases Catalogo Digital--------------------*/
+.bloque_header{
+    background-color: #AA87D9;
+    width: 100%;
+    height: 40px;
+}
+
+#logo_optica{
+    height: 100%;
+    width: auto;
+    margin-left: 5px;
+}
 .bloque_botones_categorias{ /*ver video en 10:00:00 para mejorar esto*/
     padding: 15px 0px 0px 0px;
     background-color: #9757A8;
@@ -31,16 +55,22 @@ p{
     font-family: "Montserrat";
     font-weight: 500;
     color: white;  
+    text-decoration: none;
 
+    display: inline-block;
     padding: 5px;
     background: none;
     border: none;
 
 }
 .boton_categoria:not(:last-child) { /*esto hace q la linea no este en el ultimo*/
-    border-right: 1px solid white;  /* Línea divisoria */
-    margin-right: 10px;              
-    padding-right: 10px;           
+    border-right: 1px solid white;  /* Línea divisoria */         
+    padding-right: 15px;  
+    padding-left: 15px;        
+}
+
+.boton_categoria:hover{
+    background-color: #9f7aa9;
 }
 
 .producto{ /*este es el div que contiene la imagen principal y su descripcion*/
@@ -76,7 +106,9 @@ p{
 .descripcion{
     width: 70%;
 }
-
+#aclaracion_prod{
+    color: #40A629;
+}
 .flecha_derecha {
     width: 0;
     height: 0;
@@ -100,6 +132,8 @@ p{
     display: flex;
     justify-content: center;
     align-items: center;
+    margin-top: auto;
+    margin-bottom: 40px;
     flex-wrap: wrap;
     gap: 2%;
 }

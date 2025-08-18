@@ -7,16 +7,18 @@
 </head>
 <body>
     <header>
-        <!-- nav, logo, etc. -->
-      </header>
+      {% block header %}
     
-      <main>
-        {% block content %}
-        {% endblock %}
-      </main>
-    
-      <footer>
-        <!-- pie de página -->
-      </footer>
+      {% endblock %}
+    </header>
+  
+    <main>
+      {% block content %}
+      {% endblock %}
+    </main>
+  
+    <footer>
+      <!-- pie de página -->
+    </footer>
 </body>
 </html>
