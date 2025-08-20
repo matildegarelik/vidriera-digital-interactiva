@@ -64,3 +64,10 @@ class Producto(db.Model):
 
     def __repr__(self):
         return f"<Producto {self.model} (${self.price})>"
+
+class Usuario(db.Model):
+    __tablename__ = "oc_user"
+
+    user_id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(64))
+    password = db.Column(db.String(150))

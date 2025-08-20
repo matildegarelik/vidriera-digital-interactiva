@@ -1,15 +1,12 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, Response
-import json
-import os
-from .models import Producto,Categoria,oc_product_to_category
+from .models import Producto,Categoria,oc_product_to_category, ProductDescription,Usuario
 from app import db
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from flask_socketio import emit
-from . import socketio  # 👈 importo socketio desde __init__.py
-import qrcode
-import io
-
+from . import socketio 
+import qrcode,io
+from werkzeug.security import check_password_hash
 
 main = Blueprint('main', __name__)
 
@@ -60,20 +57,18 @@ def qr():
     buf.seek(0)
     return Response(buf, mimetype="image/png")
 
-
 @main.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
 
-        with open(os.path.join(os.path.dirname(__file__), 'usuarios.json'), 'r') as f:
-            usuarios = json.load(f)
-
-        for u in usuarios:
-            if u['username'] == username and u['password'] == password:
-                session['usuario'] = username 
-                return redirect(url_for('main.home_admin'))
+        user = Usuario.query.filter_by(username=username).first()
+        
+        if user and user.password == password:  # si password está en texto plano
+        # if user and check_password_hash(user.password, password):
+            session['usuario'] = username
+            return redirect(url_for('main.home_admin'))
 
         flash('Usuario o contraseña incorrectos')
         return redirect(url_for('main.login'))
@@ -85,11 +80,35 @@ def home_admin():
     if 'usuario' not in session:
         flash('Debes iniciar sesión primero')
         return redirect(url_for('main.login'))
-    
-    with open(os.path.join(os.path.dirname(__file__), 'lentes.json'), 'r') as f:
-        lentes = json.load(f)
 
-    return render_template('home_admin.html', lentes=lentes)
+    # traemos todos los productos con su descripción
+    categoria_ids = [107, 62, 106, 111]
+    lentes = []
+
+    for cat_id in categoria_ids:
+        productos = (
+            db.session.query(Producto, ProductDescription)
+            .join(ProductDescription, Producto.product_id == ProductDescription.product_id)
+            .join(oc_product_to_category, Producto.product_id == oc_product_to_category.c.product_id)
+            .filter(oc_product_to_category.c.category_id == cat_id)
+            .limit(10)
+            .all()
+        )
+        lentes.extend(productos)
+
+    # armamos lista simple para la plantilla
+    lentes_data = [
+        {
+            "id": p.product_id,
+            "nombre": desc.name,
+            "imagen": p.image,
+            "visible": p.status
+        }
+        for p, desc in lentes
+    ]
+
+    return render_template('home_admin.html', lentes=lentes_data)
+
 
 @main.route('/logout')
 def logout():
@@ -97,34 +116,43 @@ def logout():
     flash('Sesión cerrada correctamente')
     return redirect(url_for('main.login'))
 
+
 @main.route('/lente/<int:lente_id>')
 def lente_detalle(lente_id):
-    with open(os.path.join(os.path.dirname(__file__), 'lentes.json'), 'r') as f:
-        lentes = json.load(f)
-
-    lente = next((l for l in lentes if l['id'] == lente_id), None)
+    lente = (
+        db.session.query(Producto, ProductDescription)
+        .join(ProductDescription, Producto.product_id == ProductDescription.product_id)
+        .filter(Producto.product_id == lente_id)
+        .first()
+    )
 
     if not lente:
         flash('Modelo no encontrado')
         return redirect(url_for('main.home_admin'))
 
-    return render_template('lente_detalle.html', lente=lente)
+    p, desc = lente
+    return render_template('lente_detalle.html', lente={
+        "id": p.product_id,
+        "nombre": desc.name,
+        "imagen": p.image,
+        "visible": p.status
+    })
+
 
 @main.route('/lente/<int:lente_id>', methods=['POST'])
 def editar_lente(lente_id):
-    path = os.path.join(os.path.dirname(__file__), 'lentes.json')
-    with open(path, 'r') as f:
-        lentes = json.load(f)
+    producto = Producto.query.get(lente_id)
+    descripcion = ProductDescription.query.filter_by(product_id=lente_id).first()
 
-    for lente in lentes:
-        if lente['id'] == lente_id:
-            lente['nombre'] = request.form['nombre']
-            lente['imagen'] = request.form['imagen']
-            lente['visible'] = 'visible' in request.form
-            break
+    if not producto or not descripcion:
+        flash('Modelo no encontrado')
+        return redirect(url_for('main.home_admin'))
 
-    with open(path, 'w') as f:
-        json.dump(lentes, f, indent=4)
+    descripcion.name = request.form['nombre']
+    producto.image = request.form['imagen']
+    producto.status = 'visible' in request.form
+
+    db.session.commit()
 
     flash('Modelo actualizado con éxito')
     return redirect(url_for('main.lente_detalle', lente_id=lente_id))
@@ -132,56 +160,51 @@ def editar_lente(lente_id):
 
 @main.route('/toggle_visible/<int:lente_id>', methods=['POST'])
 def toggle_visible(lente_id):
-    path = os.path.join(os.path.dirname(__file__), 'lentes.json')
-    with open(path, 'r') as f:
-        lentes = json.load(f)
+    producto = Producto.query.get(lente_id)
+    if not producto:
+        return {'success': False}
 
-    for lente in lentes:
-        if lente['id'] == lente_id:
-            lente['visible'] = not lente['visible']
-            break
+    producto.status = not producto.status
+    db.session.commit()
 
-    with open(path, 'w') as f:
-        json.dump(lentes, f, indent=4)
+    return {'success': True, 'new_visible': producto.status}
 
-    return {'success': True, 'new_visible': lente['visible']}
 
 @main.route('/delete_lente/<int:lente_id>', methods=['DELETE'])
 def delete_lente(lente_id):
-    path = os.path.join(os.path.dirname(__file__), 'lentes.json')
-    with open(path, 'r') as f:
-        lentes = json.load(f)
+    producto = Producto.query.get(lente_id)
+    descripcion = ProductDescription.query.filter_by(product_id=lente_id).first()
 
-    lentes = [l for l in lentes if l['id'] != lente_id]
+    if producto:
+        db.session.delete(producto)
+    if descripcion:
+        db.session.delete(descripcion)
 
-    with open(path, 'w') as f:
-        json.dump(lentes, f, indent=4)
-
+    db.session.commit()
     return {'success': True}
+
 
 @main.route('/lente/nuevo', methods=['GET', 'POST'])
 def agregar_lente():
     if request.method == 'POST':
-        path = os.path.join(os.path.dirname(__file__), 'lentes.json')
-        with open(path, 'r') as f:
-            lentes = json.load(f)
+        nuevo_producto = Producto(
+            model=request.form['nombre'],
+            image=request.form['imagen'],
+            status='visible' in request.form,
+            quantity=0,  # defaults, cambialo según tu modelo
+            price=0
+        )
+        db.session.add(nuevo_producto)
+        db.session.commit()
 
-        nuevo_id = max([l['id'] for l in lentes], default=0) + 1
-
-        nuevo_lente = {
-            'id': nuevo_id,
-            'nombre': request.form['nombre'],
-            'imagen': request.form['imagen'],
-            'visible': 'visible' in request.form
-        }
-
-        lentes.append(nuevo_lente)
-
-        with open(path, 'w') as f:
-            json.dump(lentes, f, indent=4)
+        nueva_desc = ProductDescription(
+            product_id=nuevo_producto.product_id,
+            name=request.form['nombre']
+        )
+        db.session.add(nueva_desc)
+        db.session.commit()
 
         flash('Modelo agregado con éxito')
         return redirect(url_for('main.home_admin'))
 
     return render_template('lente_nuevo.html')
-
