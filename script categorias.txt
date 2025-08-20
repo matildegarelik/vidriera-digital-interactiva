@@ -1,0 +1,7 @@
+SELECT c.category_id,
+       COUNT(DISTINCT p.product_id) AS num_productos
+FROM oc_category c
+JOIN oc_product_to_category pc ON c.category_id = pc.category_id
+JOIN oc_product p ON pc.product_id = p.product_id  -- asegura que el producto exista
+GROUP BY c.category_id
+ORDER BY num_productos DESC;

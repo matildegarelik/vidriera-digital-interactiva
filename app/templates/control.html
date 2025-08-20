@@ -1,0 +1,63 @@
+{% extends 'layout.html' %}
+
+
+{% block content %}
+<div class="container mt-4">
+
+  <h2 class="mb-3">Panel de Control</h2>
+
+  <!-- Tabs de categorías -->
+  <ul class="nav nav-tabs" id="categoriaTabs" role="tablist">
+    {% for categoria in categorias %}
+      <li class="nav-item" role="presentation">
+        <button class="nav-link {% if loop.first %}active{% endif %}" 
+                id="cat-{{categoria.category_id}}-tab"
+                data-bs-toggle="tab"
+                data-bs-target="#cat-{{categoria.category_id}}"
+                type="button" role="tab">
+          Categoría {{categoria.category_id}}
+        </button>
+      </li>
+    {% endfor %}
+  </ul>
+
+  <!-- Contenido de productos por categoría -->
+  <div class="tab-content border p-3" id="categoriaTabsContent">
+    {% for categoria in categorias %}
+      <div class="tab-pane fade {% if loop.first %}show active{% endif %}" 
+           id="cat-{{categoria.category_id}}" 
+           role="tabpanel">
+
+        <div class="row">
+          {% for producto in categoria.productos %}
+            <div class="col-md-4 mb-3">
+              <div class="card h-100 shadow-sm">
+                <div class="card-body d-flex flex-column justify-content-between">
+                  <h5 class="card-title">{{producto.model}}</h5>
+                  <p class="card-text text-muted">SKU: {{producto.sku}}</p>
+                  <button class="btn btn-primary mt-auto"
+                          onclick="cambiar({{categoria.category_id}}, {{producto.product_id}})">
+                    Mostrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script>
+  const socket = io();
+
+  function cambiar(categoria, producto) {
+    socket.emit("cambiar_producto", { categoria, producto });
+  }
+</script>
+{% endblock %}

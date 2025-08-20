@@ -1,6 +1,15 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, Response
 import json
 import os
+from .models import Producto,Categoria,oc_product_to_category
+from app import db
+from sqlalchemy import func
+from sqlalchemy.orm import joinedload
+from flask_socketio import emit
+from . import socketio  # 👈 importo socketio desde __init__.py
+import qrcode
+import io
+
 
 main = Blueprint('main', __name__)
 
@@ -10,7 +19,47 @@ def index():
 
 @main.route('/catalogo')
 def catalogo():
-    return render_template('catalogo.html')
+    #productos = Producto.query.all()
+    # Contar productos por categoría y ordenar descendente
+    categorias = (
+        Categoria.query
+        .options(
+            joinedload(Categoria.productos).joinedload(Producto.descripcion)  # productos + descripción
+        )
+        .filter(Categoria.category_id.in_([107, 62, 106, 111]))
+        .all()
+    )
+    c =[]
+    for categoria in categorias:
+        # Tomar los primeros 10 productos de esta categoría
+        categoria.productos = categoria.productos[:10]
+        c.append(categoria)
+    return render_template('catalogo.html',categorias=categorias)
+
+@main.route("/control")
+def control():
+    categorias = Categoria.query.filter(Categoria.category_id.in_([107, 62, 106, 111])).all()
+    c =[]
+    for categoria in categorias:
+        # Tomar los primeros 10 productos de esta categoría
+        categoria.productos = categoria.productos[:10]
+        c.append(categoria)
+    return render_template("control.html",categorias=categorias)
+
+@socketio.on("cambiar_producto")
+def handle_cambio(data):
+    # reenviar a todos los catálogos conectados
+    emit("actualizar_catalogo", data, broadcast=True)
+
+@main.route("/qr")
+def qr():
+    url = url_for('main.control',external=True)
+    img = qrcode.make(url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return Response(buf, mimetype="image/png")
+
 
 @main.route('/login', methods=['GET', 'POST'])
 def login():
