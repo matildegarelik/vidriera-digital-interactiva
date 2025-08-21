@@ -45,8 +45,7 @@ def control():
 @socketio.on("cambiar_producto")
 def handle_cambio(data):
     # reenviar a todos los catálogos conectados
-    print("HANDLER: recibir 'cambiar_producto' con data:", data, " sid:", request.sid)
-
+    print('tesxt')
     emit("actualizar_catalogo", data, broadcast=True, include_self=True)
 
 @main.route("/qr")
