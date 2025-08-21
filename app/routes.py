@@ -1,10 +1,9 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, Response
 from .models import Producto,Categoria,oc_product_to_category, ProductDescription,Usuario
-from app import db
+from app import db, socketio
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from flask_socketio import emit
-from . import socketio 
 import qrcode,io
 from werkzeug.security import check_password_hash
 
@@ -46,7 +45,9 @@ def control():
 @socketio.on("cambiar_producto")
 def handle_cambio(data):
     # reenviar a todos los catálogos conectados
-    emit("actualizar_catalogo", data, broadcast=True)
+    print("HANDLER: recibir 'cambiar_producto' con data:", data, " sid:", request.sid)
+
+    emit("actualizar_catalogo", data, broadcast=True, include_self=True)
 
 @main.route("/qr")
 def qr():
