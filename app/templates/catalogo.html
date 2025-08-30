@@ -26,7 +26,9 @@
                 
                 <div class="producto">
                     <div class="imagen_producto">
-                        <img id="imagen_principal" src = "https://www.svgrepo.com/show/508699/landscape-placeholder.svg">
+                        <img id="imagen_principal"
+                          src="{{ url_for('static', filename=producto.image) if producto.image else url_for('static', filename='images/placeholder.svg') }}"
+                          alt="Imagen {{ producto.model }}">
                     </div>
                     <div class = "bloque_flecha_descripcion">
                         
@@ -44,14 +46,15 @@
         </div>
 
         <div class="slider-container">
-            <button class="slider-arrow left" id="arrowLeft">&#10094;</button>
+            <button class="slider-arrow left" id="arrowLeft" style="display:none">&#10094;</button>
 
             <div class="tabsCategoria-wrapper">
                 <ul class="nav nav-tabs tabsCategoria py-3" role="tablist">
                 {% for producto in categoria.productos %}
                 <li class="nav-item" role="presentation">
                     <button class="nav-link  {% if loop.first %} active {% endif %}" id="subtab{{producto.product_id}}-tab" data-bs-toggle="tab" data-bs-target="#subtab{{producto.product_id}}" type="button" role="tab">
-                    <img src="https://www.svgrepo.com/show/508699/landscape-placeholder.svg" class="card-img-top" style="height: 60px;" alt="Imagen {{producto.model}}">
+                      <img src="{{ url_for('static', filename=producto.image) if producto.image else url_for('static', filename='images/placeholder.svg') }}"
+                        class="card-img-top" style="height: 60px;" alt="Imagen {{ producto.model }}">
                     </button>
                 </li>
                 {% endfor %}
@@ -59,7 +62,7 @@
                 </ul>
             </div>
 
-            <button class="slider-arrow right" id="arrowRight">&#10095;</button>
+            <button class="slider-arrow right" id="arrowRight" style="display: none;">&#10095;</button>
         </div>
 
     
@@ -75,31 +78,122 @@
 
 
 
-
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
+  // Helpers
+  function centerInWrapper(tabBtn) {
+    const slider = tabBtn.closest('.slider-container');
+    if (!slider) return;
+    const wrapper = slider.querySelector('.tabsCategoria-wrapper');
+    const wRect = wrapper.getBoundingClientRect();
+    const eRect = tabBtn.getBoundingClientRect();
+    const delta = (eRect.left + eRect.width / 2) - (wRect.left + wRect.width / 2);
+    wrapper.scrollBy({ left: delta, behavior: 'smooth' });
+  }
+
+  function getActiveCategoryTabBtn() {
+    return document.querySelector('#tabsCatalogo .nav-link.active');
+  }
+
+  function getActiveCategoryPane() {
+    const activeCatBtn = getActiveCategoryTabBtn();
+    if (!activeCatBtn) return null;
+    const targetSel = activeCatBtn.getAttribute('data-bs-target') || activeCatBtn.dataset.bsTarget;
+    return document.querySelector(targetSel);
+  }
+
+  function getActiveProductBtn() {
+    return document.querySelector('.tabsCategoria .nav-link.active');
+  }
+
+  function clickTab(btn) { if (btn) btn.click(); }
+
+  // Auto-advance timer
+  let idleTimer = null;
+  function resetInactivityTimer() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(autoAdvance, 60_000); // 1 minuto
+  }
+
+  function autoAdvance() {
+    const catTabs = Array.from(document.querySelectorAll('#tabsCatalogo .nav-link'));
+    const activeCatBtn = getActiveCategoryTabBtn();
+    const catIdx = Math.max(0, catTabs.indexOf(activeCatBtn));
+
+    const activePane = getActiveCategoryPane();
+    if (!activePane) return resetInactivityTimer();
+
+    const prodBtns = Array.from(activePane.querySelectorAll('.tabsCategoria .nav-link'));
+    const activeProdBtn = getActiveProductBtn();
+    const prodIdx = Math.max(0, prodBtns.indexOf(activeProdBtn));
+
+    // Siguiente producto en la misma categoría, o pasar de categoría si termina
+    if (prodIdx < prodBtns.length - 1) {
+      clickTab(prodBtns[prodIdx + 1]);
+    } else {
+      const nextCatIdx = (catIdx + 1) % catTabs.length;
+      clickTab(catTabs[nextCatIdx]); // activa categoría
+      // activar primer producto de esa categoría
+      const nextPane = document.querySelector(catTabs[nextCatIdx].getAttribute('data-bs-target') || catTabs[nextCatIdx].dataset.bsTarget);
+      const nextProdBtns = Array.from(nextPane.querySelectorAll('.tabsCategoria .nav-link'));
+      if (nextProdBtns.length) clickTab(nextProdBtns[0]);
+    }
+    resetInactivityTimer();
+  }
+
+  // Mostrar flechas del slider (opcional)
   const wrapper = document.querySelector('.tabsCategoria-wrapper');
   const btnLeft = document.getElementById('arrowLeft');
   const btnRight = document.getElementById('arrowRight');
+  if (wrapper && btnLeft && btnRight) {
+    //btnLeft.style.display = 'block';
+    //btnRight.style.display = 'block';
+    btnLeft.addEventListener('click', () => wrapper.scrollBy({ left: -200, behavior: 'smooth' }));
+    btnRight.addEventListener('click', () => wrapper.scrollBy({ left:  200, behavior: 'smooth' }));
+  }
 
-  btnLeft.addEventListener('click', () => {
-    wrapper.scrollBy({ left: -200, behavior: 'smooth' });
+  // Centrar siempre que se muestre un subtab (producto) y resetear timer
+  document.addEventListener('shown.bs.tab', (ev) => {
+    const btn = ev.target; // botón de tab activado
+    if (btn.id && btn.id.startsWith('subtab') && btn.classList.contains('nav-link')) {
+      centerInWrapper(btn);
+      resetInactivityTimer();
+    }
+    // Si se cambió la categoría, centrar el producto activo de esa categoría
+    if (btn.id && btn.id.startsWith('tab') && btn.classList.contains('nav-link')) {
+      const pane = document.querySelector(btn.getAttribute('data-bs-target') || btn.dataset.bsTarget);
+      const prodActive = pane?.querySelector('.tabsCategoria .nav-link.active') || pane?.querySelector('.tabsCategoria .nav-link');
+      if (prodActive) {
+        // asegurar que haya un producto activo y centrar
+        if (!prodActive.classList.contains('active')) clickTab(prodActive);
+        centerInWrapper(prodActive);
+        resetInactivityTimer();
+      }
+    }
   });
 
-  btnRight.addEventListener('click', () => {
-    wrapper.scrollBy({ left: 200, behavior: 'smooth' });
-  });
-</script>
-
-<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-<script>
+  // Socket: seleccionar y centrar al llegar evento, y resetear timer
   const socket = io();
+  socket.on("actualizar_catalogo", (data) => {
+    // activar categoría y producto
+    const catBtn = document.getElementById("tab" + data.categoria + "-tab");
+    const prodBtn = document.getElementById("subtab" + data.producto + "-tab");
+    if (catBtn) clickTab(catBtn);
+    if (prodBtn) {
+      clickTab(prodBtn);
+      centerInWrapper(prodBtn);
+    }
+    resetInactivityTimer();
+  });
 
-  socket.on("actualizar_catalogo", data => {
-    console.log("Cambiar a:", data);
-    // acá hacés click programático en el tab correspondiente
-    document.getElementById("tab" + data.categoria + "-tab").click();
-    document.getElementById("subtab" + data.producto + "-tab").click();
+  // Inicializar: centrar el activo al cargar y arrancar timer
+  window.addEventListener('load', () => {
+    const initial = getActiveProductBtn();
+    if (initial) centerInWrapper(initial);
+    resetInactivityTimer();
   });
 </script>
+
+
 
 {% endblock %}

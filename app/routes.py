@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, Response
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, Response,jsonify,current_app
 from .models import Producto,Categoria,oc_product_to_category, ProductDescription,Usuario
 from app import db, socketio
 from sqlalchemy import func
@@ -6,6 +6,7 @@ from sqlalchemy.orm import joinedload
 from flask_socketio import emit
 import qrcode,io
 from werkzeug.security import check_password_hash
+import os, random, shutil
 
 main = Blueprint('main', __name__)
 
@@ -53,7 +54,7 @@ def qr():
     url = url_for('main.control',external=True)
     img = qrcode.make(url)
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf)
     buf.seek(0)
     return Response(buf, mimetype="image/png")
 
@@ -208,3 +209,53 @@ def agregar_lente():
         return redirect(url_for('main.home_admin'))
 
     return render_template('lente_nuevo.html')
+
+
+
+@main.route("/_dev/generate_fake_product_images",methods=['GET'])
+def generate_fake_product_images():
+    # 1) Config fuente de imágenes “semilla”
+    seed_dir = os.path.join(current_app.static_folder, "images/seeds")
+    pool = [os.path.join(seed_dir, f"fr{i}.png") for i in range(1, 6)]
+    missing = [p for p in pool if not os.path.isfile(p)]
+    if missing:
+        return jsonify(error=f"Faltan semillas: {missing}"), 400
+
+    # 2) Traer productos igual que en tu vista
+    categorias = (
+        Categoria.query
+        .options(joinedload(Categoria.productos).joinedload(Producto.descripcion))
+        .filter(Categoria.category_id.in_([107, 62, 106, 111]))
+        .all()
+    )
+    for c in categorias:
+        c.productos = c.productos[:10]
+
+    # 3) Crear/llenar archivos en /static/<producto.image>
+    overwrite = request.args.get("overwrite", "0") == "1"
+    created, skipped, errors = 0, 0, []
+
+    for categoria in categorias:
+        for producto in categoria.productos:
+            rel_path = (producto.image or f"catalogo/{producto.product_id}.jpg").lstrip("/\\")
+            dest_path = os.path.join(current_app.static_folder, rel_path)
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+
+            if os.path.exists(dest_path) and not overwrite:
+                skipped += 1
+                continue
+
+            try:
+                src = random.choice(pool)
+                shutil.copyfile(src, dest_path)
+                created += 1
+            except Exception as e:
+                errors.append({"producto_id": producto.product_id, "dest": rel_path, "err": str(e)})
+
+    return jsonify(
+        ok=True,
+        created=created,
+        skipped=skipped,
+        errors=errors[:20],  # recorte por si hay muchos
+        hint="Usá ?overwrite=1 para forzar reescritura."
+    )
