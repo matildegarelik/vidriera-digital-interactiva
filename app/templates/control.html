@@ -8,12 +8,12 @@
 {% block content %}
 <div class="contenedor_general">
   <div class="contenedor_botones">
-    <button class="botones_arriba_abajo"><i class="fas fa-caret-up"></i></button>
+    <button class="botones_arriba_abajo" onclick="moverCatalogo('arriba')"><i class="fas fa-caret-up"></i></button>
     <div class="contenedor_botones_horizontales">
       <button class="botones_izq" onclick="moverCatalogo('izquierda')"><i class="fas fa-caret-left"></i></button>
       <button class="botones_der" onclick="moverCatalogo('derecha')"><i class="fas fa-caret-right"></i></button>
     </div>
-    <button class="botones_arriba_abajo"><i class="fas fa-caret-down"></i></button>
+    <button class="botones_arriba_abajo" onclick="moverCatalogo('abajo')"><i class="fas fa-caret-down"></i></button>
   </div>
   <button class="boton_probar">Probar</button>
 </div>
@@ -23,13 +23,24 @@
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
   const socket = io();
+  let modo = 1; //si el modo es 1 cambio la categoria, si es 2 cambio los productos
   
+
   function moverCatalogo(direccion) {
-    socket.emit("mover_catalogo", { direccion });
+    if(direccion == "arriba"){
+      modo = 1;
+      console.log("Modo cambiado a: Categoria");
+    }else if (direccion == "abajo"){
+      modo = 2;
+      console.log("Modo cambiado a: Producto");
+    }else{
+      if (modo == 1){
+        socket.emit("cambio_categoria", {direccion: direccion});
+      }else{
+        socket.emit("mover_catalogo", { direccion });
+      }
+    }
   }
 
-  function cambiar(categoria, producto) {
-    socket.emit("cambiar_producto", { categoria, producto });
-  }
 </script>
 {% endblock %}

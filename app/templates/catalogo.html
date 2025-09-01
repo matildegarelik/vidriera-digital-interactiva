@@ -171,7 +171,35 @@
       }
     }
   });
+  //------------------ Para control ------------------//
+  function moveNextProduct() {
+    const activePane = getActiveCategoryPane();
+    if (!activePane) return;
 
+    const prodBtns = Array.from(activePane.querySelectorAll('.tabsCategoria .nav-link'));
+    const activeProdBtn = getActiveProductBtn();
+    const idx = prodBtns.indexOf(activeProdBtn);
+
+    if (idx === -1) return;
+
+    const nextIdx = (idx + 1) % prodBtns.length; // vuelve al inicio si está en el último
+    clickTab(prodBtns[nextIdx]);
+  }
+
+  function movePrevProduct() {
+    const activePane = getActiveCategoryPane();
+    if (!activePane) return;
+
+    const prodBtns = Array.from(activePane.querySelectorAll('.tabsCategoria .nav-link'));
+    const activeProdBtn = getActiveProductBtn();
+    const idx = prodBtns.indexOf(activeProdBtn);
+
+    if (idx === -1) return;
+
+    const prevIdx = (idx - 1 + prodBtns.length) % prodBtns.length; // vuelve al final si está en el primero
+    clickTab(prodBtns[prevIdx]);
+  }
+  //------------------ Eventos ------------------//
   // Socket: seleccionar y centrar al llegar evento, y resetear timer
   const socket = io();
   socket.on("actualizar_catalogo", (data) => {
@@ -192,6 +220,14 @@
     if (initial) centerInWrapper(initial);
     resetInactivityTimer();
   });
+  socket.on("mover_catalogo", data => {
+      console.log("Mover catalogo:", data);
+      if (data.direccion === "izquierda") {
+        movePrevProduct();
+      } else if (data.direccion === "derecha") {
+        moveNextProduct();
+      }
+    });
 </script>
 
 

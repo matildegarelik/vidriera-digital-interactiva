@@ -49,6 +49,11 @@ def handle_cambio(data):
     print('tesxt')
     emit("actualizar_catalogo", data, broadcast=True, include_self=True)
 
+@socketio.on("mover_catalogo")
+def handle_mover_catalogo(data):
+    # reenviamos la orden de movimiento a todos los catálogos
+    emit("mover_catalogo", data, broadcast=True, include_self=False)
+    
 @main.route("/qr")
 def qr():
     url = url_for('main.control',external=True)
