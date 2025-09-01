@@ -35,7 +35,7 @@
       console.log("Modo cambiado a: Producto");
     }else{
       if (modo == 1){
-        socket.emit("cambio_categoria", {direccion: direccion});
+        socket.emit("mover_categoria", {direccion: direccion});
       }else{
         socket.emit("mover_catalogo", { direccion });
       }

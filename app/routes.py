@@ -53,6 +53,11 @@ def handle_cambio(data):
 def handle_mover_catalogo(data):
     # reenviamos la orden de movimiento a todos los catálogos
     emit("mover_catalogo", data, broadcast=True, include_self=False)
+
+@socketio.on("mover_categoria")
+def handle_mover_categoria(data):
+    # reenviamos la orden de movimiento a todos los catálogos
+    emit("mover_categoria", data, broadcast=True, include_self=False)
     
 @main.route("/qr")
 def qr():

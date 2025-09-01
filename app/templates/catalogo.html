@@ -177,12 +177,12 @@
     if (!activePane) return;
 
     const prodBtns = Array.from(activePane.querySelectorAll('.tabsCategoria .nav-link'));
-    const activeProdBtn = getActiveProductBtn();
-    const idx = prodBtns.indexOf(activeProdBtn);
+    if (!prodBtns.length) return;
 
-    if (idx === -1) return;
+    const activeInPane = activePane.querySelector('.tabsCategoria .nav-link.active') || prodBtns[0];
+    const idx = prodBtns.indexOf(activeInPane);
+    const nextIdx = (idx + 1) % prodBtns.length;
 
-    const nextIdx = (idx + 1) % prodBtns.length; // vuelve al inicio si está en el último
     clickTab(prodBtns[nextIdx]);
   }
 
@@ -191,13 +191,35 @@
     if (!activePane) return;
 
     const prodBtns = Array.from(activePane.querySelectorAll('.tabsCategoria .nav-link'));
-    const activeProdBtn = getActiveProductBtn();
-    const idx = prodBtns.indexOf(activeProdBtn);
+    if (!prodBtns.length) return;
 
-    if (idx === -1) return;
+    const activeInPane = activePane.querySelector('.tabsCategoria .nav-link.active') || prodBtns[0];
+    const idx = prodBtns.indexOf(activeInPane);
+    const prevIdx = (idx - 1 + prodBtns.length) % prodBtns.length;
 
-    const prevIdx = (idx - 1 + prodBtns.length) % prodBtns.length; // vuelve al final si está en el primero
     clickTab(prodBtns[prevIdx]);
+  }
+
+  function moveNextCategory() {
+    const catBtns = Array.from(document.querySelectorAll('#tabsCatalogo .nav-link'));
+    if (!catBtns.length) return;
+
+    const activeCatBtn = getActiveCategoryTabBtn() || catBtns[0];
+    const idx = catBtns.indexOf(activeCatBtn);
+    const nextIdx = (idx + 1) % catBtns.length;
+
+    clickTab(catBtns[nextIdx]); // tu handler shown.bs.tab activa/centra el primer producto
+  }
+
+  function movePrevCategory() {
+    const catBtns = Array.from(document.querySelectorAll('#tabsCatalogo .nav-link'));
+    if (!catBtns.length) return;
+
+    const activeCatBtn = getActiveCategoryTabBtn() || catBtns[0];
+    const idx = catBtns.indexOf(activeCatBtn);
+    const prevIdx = (idx - 1 + catBtns.length) % catBtns.length;
+
+    clickTab(catBtns[prevIdx]);
   }
   //------------------ Eventos ------------------//
   // Socket: seleccionar y centrar al llegar evento, y resetear timer
@@ -228,6 +250,15 @@
         moveNextProduct();
       }
     });
+    socket.on("mover_categoria", data => {
+      console.log("Mover categoria:", data);
+      if (data.direccion === "izquierda") {
+        movePrevCategory();
+      } else if (data.direccion === "derecha") {
+        moveNextCategory();
+      }
+    });
+      
 </script>
 
 
