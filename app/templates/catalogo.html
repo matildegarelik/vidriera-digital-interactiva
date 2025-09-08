@@ -224,17 +224,6 @@
   //------------------ Eventos ------------------//
   // Socket: seleccionar y centrar al llegar evento, y resetear timer
   const socket = io();
-  /*socket.on("actualizar_catalogo", (data) => {
-    // activar categoría y producto
-    const catBtn = document.getElementById("tab" + data.categoria + "-tab");
-    const prodBtn = document.getElementById("subtab" + data.producto + "-tab");
-    if (catBtn) clickTab(catBtn);
-    if (prodBtn) {
-      clickTab(prodBtn);
-      centerInWrapper(prodBtn);
-    }
-    resetInactivityTimer();
-  });*/
 
   // Inicializar: centrar el activo al cargar y arrancar timer
   window.addEventListener('load', () => {

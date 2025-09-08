@@ -30,27 +30,45 @@ def client(app_instance):
     return app_instance.test_client()
 
 def test_control_status(client):
-    """Chequear que la página de control carga bien"""
     resp = client.get("/control")
     assert resp.status_code == 200
-    assert b"Control" in resp.data or b"Panel" in resp.data  # depende de template
+    html = resp.data.decode("utf-8")
+    assert "contenedor_general" in html  # clase principal del template
+    assert "boton_probar" in html        # botón de prueba
+
 
 def test_socketio_catalogo_control(app_instance):
-    client1 = socketio.test_client(app_instance, flask_test_client=app_instance.test_client())
-    client2 = socketio.test_client(app_instance, flask_test_client=app_instance.test_client())
+    # app_instance es la Flask app
+    app = app_instance
 
-    data = {"categoria": 107, "producto": 1}
-    client1.emit("cambiar_producto", data)
+    # Dos clientes: control (emite) y catálogo (recibe)
+    flask_client_ctrl = app.test_client()
+    flask_client_cat  = app.test_client()
 
-    socketio.sleep(0.1)
+    client_ctrl = socketio.test_client(app, flask_test_client=flask_client_ctrl, namespace="/")
+    client_cat  = socketio.test_client(app, flask_test_client=flask_client_cat,  namespace="/")
 
-    received = client2.get_received()
+    assert client_ctrl.is_connected(namespace="/")
+    assert client_cat.is_connected(namespace="/")
+
+    # Limpiar colas por si quedó algo de otros tests
+    client_ctrl.get_received(namespace="/")
+    client_cat.get_received(namespace="/")
+
+    # El control pide mover producto → catálogo debe recibir actualizar_producto
+    payload = {"direccion": "derecha"}
+    client_ctrl.emit("mover_producto", payload, namespace="/")
+
+    socketio.sleep(0.15)
+
+    received = client_cat.get_received(namespace="/")
     print("EVENTOS RECIBIDOS CLIENTE2:", received)
 
-    client1.disconnect()
-    client2.disconnect()
+    client_ctrl.disconnect(namespace="/")
+    client_cat.disconnect(namespace="/")
 
+    assert any(evt.get("name") == "actualizar_producto" for evt in received), \
+        f"No llegó 'actualizar_producto'. Recibido: {received}"
 
-    assert any(evt["name"] == "actualizar_catalogo" for evt in received)
 
 

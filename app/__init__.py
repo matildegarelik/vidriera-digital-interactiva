@@ -2,6 +2,11 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from .config import Config
 from flask_socketio import SocketIO
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
 
 db = SQLAlchemy()
 socketio = SocketIO(cors_allowed_origins="*",async_mode="threading")  # permite conectar desde varias pestañas
