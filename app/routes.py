@@ -43,21 +43,16 @@ def control():
         c.append(categoria)
     return render_template("control.html",categorias=categorias)
 
-@socketio.on("cambiar_producto")
-def handle_cambio(data):
-    # reenviar a todos los catálogos conectados
-    print('tesxt')
-    emit("actualizar_catalogo", data, broadcast=True, include_self=True)
 
-@socketio.on("mover_catalogo")
-def handle_mover_catalogo(data):
+@socketio.on("mover_producto")
+def handle_mover_producto(data):
     # reenviamos la orden de movimiento a todos los catálogos
-    emit("mover_catalogo", data, broadcast=True, include_self=False)
+    emit("actualizar_producto", data, broadcast=True, include_self=False)
 
 @socketio.on("mover_categoria")
 def handle_mover_categoria(data):
     # reenviamos la orden de movimiento a todos los catálogos
-    emit("mover_categoria", data, broadcast=True, include_self=False)
+    emit("actualizar_categoria", data, broadcast=True, include_self=False)
     
 @main.route("/qr")
 def qr():

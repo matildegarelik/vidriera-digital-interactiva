@@ -224,7 +224,7 @@
   //------------------ Eventos ------------------//
   // Socket: seleccionar y centrar al llegar evento, y resetear timer
   const socket = io();
-  socket.on("actualizar_catalogo", (data) => {
+  /*socket.on("actualizar_catalogo", (data) => {
     // activar categoría y producto
     const catBtn = document.getElementById("tab" + data.categoria + "-tab");
     const prodBtn = document.getElementById("subtab" + data.producto + "-tab");
@@ -234,7 +234,7 @@
       centerInWrapper(prodBtn);
     }
     resetInactivityTimer();
-  });
+  });*/
 
   // Inicializar: centrar el activo al cargar y arrancar timer
   window.addEventListener('load', () => {
@@ -242,7 +242,7 @@
     if (initial) centerInWrapper(initial);
     resetInactivityTimer();
   });
-  socket.on("mover_catalogo", data => {
+  socket.on("actualizar_producto", data => {
       console.log("Mover catalogo:", data);
       if (data.direccion === "izquierda") {
         movePrevProduct();
@@ -250,7 +250,7 @@
         moveNextProduct();
       }
     });
-    socket.on("mover_categoria", data => {
+    socket.on("actualizar_categoria", data => {
       console.log("Mover categoria:", data);
       if (data.direccion === "izquierda") {
         movePrevCategory();
