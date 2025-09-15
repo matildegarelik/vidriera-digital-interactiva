@@ -6,7 +6,11 @@ from sqlalchemy.orm import joinedload
 from flask_socketio import emit
 import qrcode,io
 from werkzeug.security import check_password_hash
-import os, random, shutil
+from werkzeug.utils import secure_filename
+import os, random, shutil,tempfile
+from .utils import caracterizar_lente_reducida
+import numpy as np
+import cv2 as cv
 
 main = Blueprint('main', __name__)
 
@@ -264,3 +268,43 @@ def generate_fake_product_images():
         errors=errors[:20],  # recorte por si hay muchos
         hint="Usá ?overwrite=1 para forzar reescritura."
     )
+
+
+@main.route("/_dev/imgs_to_svg",methods=['GET'])
+def imgs_to_svg():
+    return render_template('index1.html')
+
+@main.route("/_dev/glb_a_cara",methods=['GET'])
+def glb_a_cara():
+    return render_template('index2.html')
+
+@main.route("/api/polarizar",methods=['POST'])
+def api_polarizar():
+    try:
+        f_lente = request.files.get("lente")
+        f_fondo = request.files.get("fondo")  # puede venir None
+        if not f_lente:
+            return jsonify({"error":"Falta archivo 'lente'"}), 400
+
+        with tempfile.TemporaryDirectory() as td:
+            p1 = os.path.join(td, secure_filename(f_lente.filename or "lente.jpg"))
+            f_lente.save(p1)
+
+            # Si no hay fondo, creamos uno blanco del tamaño del lente
+            if not f_fondo:
+                img_bgr = cv.imread(p1)
+                if img_bgr is None:
+                    return jsonify({"error":"No se pudo leer la imagen de lente"}), 400
+                H, W = img_bgr.shape[:2]
+                fondo_blanco = np.full((H, W, 3), 255, dtype=np.uint8)  # BGR blanco
+                p2 = os.path.join(td, "fondo_blanco.jpg")
+                cv.imwrite(p2, fondo_blanco)
+            else:
+                p2 = os.path.join(td, secure_filename(f_fondo.filename or "fondo.jpg"))
+                f_fondo.save(p2)
+
+            res = caracterizar_lente_reducida(p1, p2)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
