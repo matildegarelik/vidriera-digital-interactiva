@@ -1,22 +1,157 @@
 {% extends 'layout.html' %}
 {% block content %}
-<div class="container mt-4">
-    <h2>Agregar Nuevo Modelo</h2>
-    <form method="POST">
-        <div class="mb-3">
-            <label class="form-label">Nombre</label>
-            <input type="text" name="nombre" class="form-control" required>
-        </div>
-        <div class="mb-3">
-            <label class="form-label">URL de imagen</label>
-            <input type="text" name="imagen" class="form-control">
-        </div>
-        <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="visible" id="visibleCheck">
-            <label class="form-check-label" for="visibleCheck">Visible</label>
-        </div>
-        <button type="submit" class="btn btn-success">Agregar</button>
-        <a href="{{ url_for('main.home_admin') }}" class="btn btn-secondary">Cancelar</a>
-    </form>
+<div class="container my-4">
+  <h2>Agregar Modelo AR</h2>
+
+  <form method="POST" enctype="multipart/form-data">
+    <!-- Selector de producto -->
+    <div class="mb-3">
+      <label class="form-label">Producto</label>
+      <select class="form-select" name="product_id" id="productSelect" required>
+        <option value="" selected disabled>Seleccioná un producto…</option>
+        {# productos_disponibles: iterable de (product_id, product_model, desc_name) #}
+        {% for pid, pmodel, dname in productos_disponibles %}
+          <option value="{{ pid }}" data-pmodel="{{ pmodel|e }}" data-dname="{{ dname|e }}">
+            {{ pmodel }} — {{ dname }} (ID {{ pid }})
+          </option>
+        {% endfor %}
+      </select>
+      <div class="form-text">Sólo aparecen productos que aún no tienen modelo AR asociado.</div>
+    </div>
+
+    <!-- Visibilidad -->
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="checkbox" name="visible" id="visibleCheck" checked>
+      <label class="form-check-label" for="visibleCheck">Visible</label>
+    </div>
+
+    <!-- Datos simples del modelo AR -->
+     <div class="mb-3">
+      <label class="form-label">Nombre del modelo AR</label>
+      <input type="text" name="name" id="arName" class="form-control">
+      <div class="form-text">Por defecto: <code>Producto.model</code>.</div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Descripción del modelo AR</label>
+      <input type="text" name="description" id="arDescription" class="form-control"
+             placeholder="Se completa con el nombre del producto y su descripción, luego podés editarlo.">
+      <div class="form-text">Por defecto: <code>ProductDescription.name</code>.</div>
+    </div>
+
+    <!-- Archivos de imagen -->
+    <div class="row">
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Imagen frente (original)</label>
+        <input type="file" name="path_to_img_front" class="form-control" accept="image/*">
+      </div>
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Imagen perfil (original)</label>
+        <input type="file" name="path_to_img_side" class="form-control" accept="image/*">
+      </div>
+    </div>
+
+    <hr>
+
+    <!-- Aplanadas -->
+    <div class="row">
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Imagen frente (aplanada)</label>
+        <input type="file" name="path_to_img_front_flattened" class="form-control" accept="image/*">
+      </div>
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Imagen perfil (aplanada)</label>
+        <input type="file" name="path_to_img_side_flattened" class="form-control" accept="image/*">
+      </div>
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Imagen patilla (aplanada)</label>
+        <input type="file" name="path_to_img_temple_flattened" class="form-control" accept="image/*">
+      </div>
+      <div class="col-md-12 mb-3">
+        <a href="#" class="btn btn-info text-light btn-block">Helper para generarlas</a>
+      </div>
+    </div>
+
+    <hr>
+
+    <!-- SVGs -->
+    <div class="row">
+      <div class="col-md-4 mb-3">
+        <label class="form-label">SVG marco</label>
+        <input type="file" name="path_to_svg_frame" class="form-control" accept=".svg,image/svg+xml">
+      </div>
+      <div class="col-md-4 mb-3">
+        <label class="form-label">SVG lentes</label>
+        <input type="file" name="path_to_svg_glasses" class="form-control" accept=".svg,image/svg+xml">
+      </div>
+      <div class="col-md-4 mb-3">
+        <label class="form-label">SVG patilla</label>
+        <input type="file" name="path_to_svg_temple" class="form-control" accept=".svg,image/svg+xml">
+      </div>
+      <div class="col-md-12 mb-3">
+        <a href="#" class="btn btn-info text-light btn-block">Helper para generarlos</a>
+      </div>
+    </div>
+
+    <hr>
+
+    <!-- GLB -->
+    <div class="mb-3">
+      <label class="form-label">Modelo 3D (.glb)</label>
+      <input type="file" name="path_to_glb" class="form-control" accept=".glb,model/gltf-binary">
+    </div>
+    <div class="col-md-12 mb-3">
+        <a href="#" class="btn btn-info text-light btn-block">Helper para armarlo</a>
+    </div>
+
+    <hr>
+
+    <!-- JSONs -->
+    <div class="mb-3">
+      <label class="form-label">Polarization Info (JSON)</label>
+      <textarea name="polarization_info" class="form-control" rows="3" placeholder='{"tint":"gray","intensity":0.5}'></textarea>
+      <div class="form-text">Pegá un JSON válido o dejá vacío.</div>
+    </div>
+    <div class="col-md-12 mb-3">
+        <a href="#" class="btn btn-info text-light btn-block">Completar a partir de imagen aplanada</a>
+    </div>
+
+    <hr>
+
+    <div class="mb-3">
+      <label class="form-label">Config for Display (JSON)</label>
+      <textarea name="config_for_display" class="form-control" rows="3" placeholder='{"scale":1.0,"offset":{"x":0,"y":0}}'></textarea>
+      <div class="form-text">Pegá un JSON válido o dejá vacío.</div>
+    </div>
+    <div class="col-md-12 mb-3">
+        <a href="#" class="btn btn-info text-light btn-block">Helper para armarlo</a>
+    </div>
+
+    <hr>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-success">Crear</button>
+      <a href="{{ url_for('main.home_admin') }}" class="btn btn-secondary">Cancelar</a>
+    </div>
+  </form>
 </div>
+
+<script>
+  // Al seleccionar un producto, autocompleta la descripción del AR Model
+  const selectEl = document.getElementById('productSelect');
+  const descEl = document.getElementById('arDescription');
+  const nameEl = document.getElementById('arName');
+
+  selectEl?.addEventListener('change', () => {
+    const opt = selectEl.options[selectEl.selectedIndex];
+    const pmodel = opt.getAttribute('data-pmodel') || '';
+    const dname  = opt.getAttribute('data-dname')  || '';
+    // sólo setea si el usuario no escribió nada aún
+    if (!descEl.value || descEl.value.trim() === '') {
+      descEl.value = dname;
+    }
+    if(!nameEl.value || nameEl.value.trim() === ''){
+      nameEl.value = pmodel;
+    }
+  });
+</script>
 {% endblock %}

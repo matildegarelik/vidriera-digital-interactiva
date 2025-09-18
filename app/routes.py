@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, Response,jsonify,current_app
-from .models import Producto,Categoria,oc_product_to_category, ProductDescription,Usuario
+from .models import Producto,Categoria,oc_product_to_category, ProductDescription,Usuario, Model
 from app import db, socketio
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
@@ -7,10 +7,11 @@ from flask_socketio import emit
 import qrcode,io
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
-import os, random, shutil,tempfile
+import os, random, shutil,tempfile,json,uuid
 from .utils import caracterizar_lente_reducida
 import numpy as np
 import cv2 as cv
+from pathlib import Path
 
 main = Blueprint('main', __name__)
 
@@ -92,32 +93,9 @@ def home_admin():
         return redirect(url_for('main.login'))
 
     # traemos todos los productos con su descripción
-    categoria_ids = [107, 62, 106, 111]
-    lentes = []
+    models = Model.query.all()
 
-    for cat_id in categoria_ids:
-        productos = (
-            db.session.query(Producto, ProductDescription)
-            .join(ProductDescription, Producto.product_id == ProductDescription.product_id)
-            .join(oc_product_to_category, Producto.product_id == oc_product_to_category.c.product_id)
-            .filter(oc_product_to_category.c.category_id == cat_id)
-            .limit(10)
-            .all()
-        )
-        lentes.extend(productos)
-
-    # armamos lista simple para la plantilla
-    lentes_data = [
-        {
-            "id": p.product_id,
-            "nombre": desc.name,
-            "imagen": p.image,
-            "visible": p.status
-        }
-        for p, desc in lentes
-    ]
-
-    return render_template('home_admin.html', lentes=lentes_data)
+    return render_template('home_admin.html', models=models)
 
 
 @main.route('/logout')
@@ -126,98 +104,165 @@ def logout():
     flash('Sesión cerrada correctamente')
     return redirect(url_for('main.login'))
 
+def _save_upload(file_storage, subdir: str, prefix: str = "") -> str | None:
+    """
+    Guarda un archivo de formulario en UPLOAD_FOLDER/subdir y devuelve la ruta relativa guardada.
+    Si no hay archivo, devuelve None.
+    """
+    if not file_storage or not getattr(file_storage, "filename", ""):
+        return None
+
+    root = current_app.config.get("UPLOAD_FOLDER", "uploads")
+    base_dir = Path(root) / subdir
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = secure_filename(file_storage.filename)
+    # agrega un UUID corto para evitar colisiones
+    stem, ext = os.path.splitext(filename)
+    unique = f"{prefix}_{uuid.uuid4().hex[:8]}" if prefix else uuid.uuid4().hex[:8]
+    final_name = f"{stem}_{unique}{ext}"
+    path_abs = base_dir / final_name
+
+    file_storage.save(path_abs)
+    # Devolvemos ruta relativa (p.ej. para servirla estáticamente)
+    return str(path_abs.as_posix())
+
+# ---------- Crear NUEVO ar_model ----------
+@main.route('/lente/nuevo', methods=['GET', 'POST'])
+def agregar_lente():
+    if request.method == 'GET':
+        # productos disponibles para asociar (sin ar_model creado aún)
+        subq = db.session.query(Model.product_id).subquery()
+        opciones = (
+            db.session.query(
+                Producto.product_id,        # pid
+                Producto.model,             # pmodel
+                ProductDescription.name     # dname
+            )
+            .join(ProductDescription, Producto.product_id == ProductDescription.product_id)
+            .filter(~Producto.product_id.in_(db.session.query(subq.c.product_id)))
+            .order_by(ProductDescription.name.asc())
+            .all()
+        )
+        return render_template('lente_nuevo.html', productos_disponibles=opciones)
+
+    # POST: crear solo registro en ar_models
+    product_id = request.form.get('product_id', type=int)
+    if not product_id:
+        flash('Debés seleccionar un producto válido')
+        return redirect(url_for('main.agregar_lente'))
+
+    # Evitar duplicados
+    if Model.query.filter_by(product_id=product_id).first():
+        flash('Este producto ya tiene un modelo AR')
+        return redirect(url_for('main.lente_detalle', lente_id=product_id))
+
+    ar = Model(
+        product_id=product_id,
+        visible=bool(request.form.get('visible', 'on')),
+        name=request.form.get('name') or None,
+        description=request.form.get('description') or None,
+        polarization_info=_loads_or_none(request.form.get('polarization_info')),
+        config_for_display=_loads_or_none(request.form.get('config_for_display')),
+    )
+
+    db.session.add(ar)
+    db.session.commit()
+    model_id = ar.model_id
+
+
+    # archivos (opcionales)
+    ar.path_to_img_front = _save_upload(request.files.get('path_to_img_front'), "imgs/front", prefix=str(model_id))
+    ar.path_to_img_side = _save_upload(request.files.get('path_to_img_side'), "imgs/side", prefix=str(model_id))
+
+    ar.path_to_img_front_flattened = _save_upload(request.files.get('path_to_img_front_flattened'), "imgs/flattened/front", prefix=str(model_id))
+    ar.path_to_img_side_flattened = _save_upload(request.files.get('path_to_img_side_flattened'), "imgs/flattened/side", prefix=str(model_id))
+    ar.path_to_img_temple_flattened = _save_upload(request.files.get('path_to_img_temple_flattened'), "imgs/flattened/temple", prefix=str(model_id))
+
+    ar.path_to_svg_frame = _save_upload(request.files.get('path_to_svg_frame'), "svgs/frame", prefix=str(model_id))
+    ar.path_to_svg_glasses = _save_upload(request.files.get('path_to_svg_glasses'), "svgs/glasses", prefix=str(model_id))
+    ar.path_to_svg_temple = _save_upload(request.files.get('path_to_svg_temple'), "svgs/temple", prefix=str(model_id))
+
+    ar.path_to_glb = _save_upload(request.files.get('path_to_glb'), "models", prefix=str(product_id))
+
+    db.session.commit()
+
+    flash('Modelo AR creado con éxito')
+    return redirect(url_for('main.lente_detalle', lente_id=model_id))
 
 @main.route('/lente/<int:lente_id>')
 def lente_detalle(lente_id):
-    lente = (
-        db.session.query(Producto, ProductDescription)
-        .join(ProductDescription, Producto.product_id == ProductDescription.product_id)
-        .filter(Producto.product_id == lente_id)
-        .first()
-    )
+    ar_model = Model.query.get(lente_id)
 
-    if not lente:
+    if not ar_model:
         flash('Modelo no encontrado')
         return redirect(url_for('main.home_admin'))
 
-    p, desc = lente
-    return render_template('lente_detalle.html', lente={
-        "id": p.product_id,
-        "nombre": desc.name,
-        "imagen": p.image,
-        "visible": p.status
-    })
+    return render_template('lente_detalle.html',ar_model=ar_model)
 
+def _loads_or_none(texto: str):
+    if not texto or not texto.strip():
+        return None
+    try:
+        return json.loads(texto)
+    except json.JSONDecodeError:
+        return None
 
 @main.route('/lente/<int:lente_id>', methods=['POST'])
-def editar_lente(lente_id):
-    producto = Producto.query.get(lente_id)
-    descripcion = ProductDescription.query.filter_by(product_id=lente_id).first()
-
-    if not producto or not descripcion:
+def editar_lente(lente_id: int):
+    ar = Model.query.get(model_id=lente_id)
+    if not ar:
         flash('Modelo no encontrado')
         return redirect(url_for('main.home_admin'))
 
-    descripcion.name = request.form['nombre']
-    producto.image = request.form['imagen']
-    producto.status = 'visible' in request.form
+    # Campos simples
+    ar.name = request.form.get('name') or None
+    ar.description = request.form.get('description') or None
+    ar.visible = bool(request.form.get('visible', 'on'))
+
+    # Archivos -> guardar y setear paths si vinieron
+    ar.path_to_img_front = _save_upload(request.files.get('path_to_img_front'), "imgs/front", prefix=str(lente_id)) or ar.path_to_img_front
+    ar.path_to_img_side = _save_upload(request.files.get('path_to_img_side'), "imgs/side", prefix=str(lente_id)) or ar.path_to_img_side
+
+    ar.path_to_img_front_flattened = _save_upload(request.files.get('path_to_img_front_flattened'), "imgs/flattened/front", prefix=str(lente_id)) or ar.path_to_img_front_flattened
+    ar.path_to_img_side_flattened = _save_upload(request.files.get('path_to_img_side_flattened'), "imgs/flattened/side", prefix=str(lente_id)) or ar.path_to_img_side_flattened
+    ar.path_to_img_temple_flattened = _save_upload(request.files.get('path_to_img_temple_flattened'), "imgs/flattened/temple", prefix=str(lente_id)) or ar.path_to_img_temple_flattened
+
+    ar.path_to_svg_frame = _save_upload(request.files.get('path_to_svg_frame'), "svgs/frame", prefix=str(lente_id)) or ar.path_to_svg_frame
+    ar.path_to_svg_glasses = _save_upload(request.files.get('path_to_svg_glasses'), "svgs/glasses", prefix=str(lente_id)) or ar.path_to_svg_glasses
+    ar.path_to_svg_temple = _save_upload(request.files.get('path_to_svg_temple'), "svgs/temple", prefix=str(lente_id)) or ar.path_to_svg_temple
+
+    ar.path_to_glb = _save_upload(request.files.get('path_to_glb'), "models", prefix=str(lente_id)) or ar.path_to_glb
+
+    # JSON
+    ar.polarization_info = _loads_or_none(request.form.get('polarization_info'))
+    ar.config_for_display = _loads_or_none(request.form.get('config_for_display'))
 
     db.session.commit()
-
     flash('Modelo actualizado con éxito')
     return redirect(url_for('main.lente_detalle', lente_id=lente_id))
 
-
 @main.route('/toggle_visible/<int:lente_id>', methods=['POST'])
 def toggle_visible(lente_id):
-    producto = Producto.query.get(lente_id)
-    if not producto:
+    modelo = Model.query.get(lente_id)
+    if not modelo:
         return {'success': False}
 
-    producto.status = not producto.status
+    modelo.visible = not modelo.visible
     db.session.commit()
 
-    return {'success': True, 'new_visible': producto.status}
+    return {'success': True, 'new_visible': modelo.visible}
 
 
 @main.route('/delete_lente/<int:lente_id>', methods=['DELETE'])
 def delete_lente(lente_id):
-    producto = Producto.query.get(lente_id)
-    descripcion = ProductDescription.query.filter_by(product_id=lente_id).first()
+    modelo = Model.query.filter_by(model_id=lente_id).first()
 
-    if producto:
-        db.session.delete(producto)
-    if descripcion:
-        db.session.delete(descripcion)
+    if modelo:
+        db.session.delete(modelo)
 
     db.session.commit()
     return {'success': True}
-
-
-@main.route('/lente/nuevo', methods=['GET', 'POST'])
-def agregar_lente():
-    if request.method == 'POST':
-        nuevo_producto = Producto(
-            model=request.form['nombre'],
-            image=request.form['imagen'],
-            status='visible' in request.form,
-            quantity=0,  # defaults, cambialo según tu modelo
-            price=0
-        )
-        db.session.add(nuevo_producto)
-        db.session.commit()
-
-        nueva_desc = ProductDescription(
-            product_id=nuevo_producto.product_id,
-            name=request.form['nombre']
-        )
-        db.session.add(nueva_desc)
-        db.session.commit()
-
-        flash('Modelo agregado con éxito')
-        return redirect(url_for('main.home_admin'))
-
-    return render_template('lente_nuevo.html')
 
 
 
@@ -307,4 +352,9 @@ def api_polarizar():
         return jsonify(res)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@main.route("/api/polarizar",methods=['GET'])
+def api_polarizar2():
+    res = caracterizar_lente_reducida('app/CENTRALBSSMK6.jpg', None)
+    return jsonify(res)
 

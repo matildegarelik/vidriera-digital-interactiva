@@ -4,6 +4,14 @@ PFC
 2. pip install -r requirements.txt
 3. python main.py
 
+## Primera vez
+- crear nueva tabla:
+python create_table.py
+
+
+
+
+
 
 correr tests: python -m pytest -v
 (no se por qué el de socket solo anda si lo ejecuto así: pytest tests/test_modulo2.py::test_socketio_catalogo_control)

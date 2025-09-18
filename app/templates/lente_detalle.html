@@ -1,22 +1,221 @@
 {% extends 'layout.html' %}
 {% block content %}
-<div class="container mt-4">
-    <h2>Editar Modelo</h2>
-    <form method="POST" action="{{ url_for('main.editar_lente', lente_id=lente.id) }}">
-        <div class="mb-3">
-            <label class="form-label">Nombre</label>
-            <input type="text" name="nombre" class="form-control" value="{{ lente.nombre }}" required>
-        </div>
-        <div class="mb-3">
-            <label class="form-label">URL de imagen</label>
-            <input type="text" name="imagen" class="form-control" value="{{ lente.imagen }}">
-        </div>
-        <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="visible" id="visibleCheck" {% if lente.visible %}checked{% endif %}>
-            <label class="form-check-label" for="visibleCheck">Visible</label>
-        </div>
-        <button type="submit" class="btn btn-primary">Guardar cambios</button>
-        <a href="{{ url_for('main.home_admin') }}" class="btn btn-secondary">Volver</a>
-    </form>
+<div class="container my-4">
+  <div class="d-flex justify-content-between align-items-center">
+    <h2>Editar Modelo AR #{{ ar_model.model_id }}</h2>
+    <div class="d-flex gap-2">
+      <button id="btnToggle" class="btn btn-outline-primary">
+        {% if ar_model.visible %}Ocultar{% else %}Mostrar{% endif %}
+      </button>
+      <button id="btnDelete" class="btn btn-outline-danger">Eliminar</button>
+    </div>
+  </div>
+  <p class="text-muted mb-4">
+    Product ID asociado: <strong>{{ ar_model.product_id }}</strong>
+  </p>
+
+  <form method="POST" enctype="multipart/form-data"
+        action="{{ url_for('main.editar_lente', lente_id=ar_model.model_id) }}">
+
+    <!-- Visible + Descripción -->
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="checkbox" name="visible" id="visibleCheck"
+             {% if ar_model.visible %}checked{% endif %}>
+      <label class="form-check-label" for="visibleCheck">Visible</label>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Nombre</label>
+      <input type="text" name="name" class="form-control" value="{{ ar_model.name or '' }}">
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Descripción</label>
+      <input type="text" name="description" class="form-control" value="{{ ar_model.description or '' }}">
+    </div>
+
+    <!-- IMG: Frente -->
+    <div class="card mb-3">
+      <div class="card-header">Imagen frente (original)</div>
+      <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
+        {% if ar_model.path_to_img_front %}
+          <img src="{{ ar_model.path_to_img_front }}" alt="Frente" class="img-fluid">
+        {% else %}
+          <span class="text-muted">Sin archivo</span>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <input type="file" name="path_to_img_front" class="form-control" accept="image/*">
+      </div>
+    </div>
+
+    <!-- IMG: Perfil -->
+    <div class="card mb-3">
+      <div class="card-header">Imagen perfil (original)</div>
+      <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
+        {% if ar_model.path_to_img_side %}
+          <img src="{{ ar_model.path_to_img_side }}" alt="Perfil" class="img-fluid">
+        {% else %}
+          <span class="text-muted">Sin archivo</span>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <input type="file" name="path_to_img_side" class="form-control" accept="image/*">
+      </div>
+    </div>
+
+    <!-- IMG: Frente aplanada -->
+    <div class="card mb-3">
+      <div class="card-header">Imagen frente (aplanada)</div>
+      <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
+        {% if ar_model.path_to_img_front_flattened %}
+          <img src="{{ ar_model.path_to_img_front_flattened }}" alt="Frente aplanada" class="img-fluid">
+        {% else %}
+          <span class="text-muted">Sin archivo</span>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <input type="file" name="path_to_img_front_flattened" class="form-control" accept="image/*">
+      </div>
+    </div>
+
+    <!-- IMG: Perfil aplanada -->
+    <div class="card mb-3">
+      <div class="card-header">Imagen perfil (aplanada)</div>
+      <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
+        {% if ar_model.path_to_img_side_flattened %}
+          <img src="{{ ar_model.path_to_img_side_flattened }}" alt="Perfil aplanada" class="img-fluid">
+        {% else %}
+          <span class="text-muted">Sin archivo</span>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <input type="file" name="path_to_img_side_flattened" class="form-control" accept="image/*">
+      </div>
+    </div>
+
+    <!-- IMG: Patilla aplanada -->
+    <div class="card mb-3">
+      <div class="card-header">Imagen patilla (aplanada)</div>
+      <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
+        {% if ar_model.path_to_img_temple_flattened %}
+          <img src="{{ ar_model.path_to_img_temple_flattened }}" alt="Patilla aplanada" class="img-fluid">
+        {% else %}
+          <span class="text-muted">Sin archivo</span>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <input type="file" name="path_to_img_temple_flattened" class="form-control" accept="image/*">
+      </div>
+    </div>
+
+    <!-- SVG: Marco -->
+    <div class="card mb-3">
+      <div class="card-header">SVG marco</div>
+      <div class="card-body">
+        {% if ar_model.path_to_svg_frame %}
+          <code class="d-block text-truncate">{{ ar_model.path_to_svg_frame }}</code>
+          <div class="mt-2">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ ar_model.path_to_svg_frame }}" target="_blank">Ver archivo</a>
+          </div>
+        {% else %}
+          <span class="text-muted">Sin archivo</span>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <input type="file" name="path_to_svg_frame" class="form-control" accept=".svg,image/svg+xml">
+      </div>
+    </div>
+
+    <!-- SVG: Lentes -->
+    <div class="card mb-3">
+      <div class="card-header">SVG lentes</div>
+      <div class="card-body">
+        {% if ar_model.path_to_svg_glasses %}
+          <code class="d-block text-truncate">{{ ar_model.path_to_svg_glasses }}</code>
+          <div class="mt-2">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ ar_model.path_to_svg_glasses }}" target="_blank">Ver archivo</a>
+          </div>
+        {% else %}
+          <span class="text-muted">Sin archivo</span>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <input type="file" name="path_to_svg_glasses" class="form-control" accept=".svg,image/svg+xml">
+      </div>
+    </div>
+
+    <!-- SVG: Patilla -->
+    <div class="card mb-3">
+      <div class="card-header">SVG patilla</div>
+      <div class="card-body">
+        {% if ar_model.path_to_svg_temple %}
+          <code class="d-block text-truncate">{{ ar_model.path_to_svg_temple }}</code>
+          <div class="mt-2">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ ar_model.path_to_svg_temple }}" target="_blank">Ver archivo</a>
+          </div>
+        {% else %}
+          <span class="text-muted">Sin archivo</span>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <input type="file" name="path_to_svg_temple" class="form-control" accept=".svg,image/svg+xml">
+      </div>
+    </div>
+
+    <!-- GLB -->
+    <div class="card mb-3">
+      <div class="card-header">Modelo 3D (.glb)</div>
+      <div class="card-body">
+        {% if ar_model.path_to_glb %}
+          <code class="d-block text-truncate">{{ ar_model.path_to_glb }}</code>
+          <div class="mt-2">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ ar_model.path_to_glb }}" target="_blank">Descargar / Ver</a>
+          </div>
+        {% else %}
+          <span class="text-muted">Sin archivo</span>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <input type="file" name="path_to_glb" class="form-control" accept=".glb,model/gltf-binary">
+      </div>
+    </div>
+
+    <!-- JSONs -->
+    <div class="row">
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Polarization Info (JSON)</label>
+        <textarea name="polarization_info" class="form-control" rows="6">{{ ar_model.polarization_info|tojson if ar_model.polarization_info else '' }}</textarea>
+        <div class="form-text">Pegá un JSON válido o dejá vacío.</div>
+      </div>
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Config for Display (JSON)</label>
+        <textarea name="config_for_display" class="form-control" rows="6">{{ ar_model.config_for_display|tojson if ar_model.config_for_display else '' }}</textarea>
+        <div class="form-text">Pegá un JSON válido o dejá vacío.</div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary">Guardar cambios</button>
+      <a href="{{ url_for('main.home_admin') }}" class="btn btn-secondary">Volver</a>
+    </div>
+  </form>
 </div>
+
+<script>
+  // Toggle visible
+  document.getElementById('btnToggle')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const resp = await fetch('{{ url_for("main.toggle_visible", lente_id=ar_model.model_id) }}', { method: 'POST' });
+    if (resp.ok) location.reload();
+  });
+
+  // Delete
+  document.getElementById('btnDelete')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (!confirm('¿Eliminar este modelo AR?')) return;
+    const resp = await fetch('{{ url_for("main.delete_lente", lente_id=ar_model.model_id) }}', { method: 'DELETE' });
+    if (resp.ok) window.location = '{{ url_for("main.home_admin") }}';
+  });
+</script>
 {% endblock %}

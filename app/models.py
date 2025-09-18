@@ -1,4 +1,5 @@
 from . import db
+from sqlalchemy.dialects.mysql import JSON
 
 # Tabla intermedia (producto ↔ categoría)
 oc_product_to_category = db.Table(
@@ -71,3 +72,36 @@ class Usuario(db.Model):
     user_id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64))
     password = db.Column(db.String(150))
+
+
+class Model(db.Model):
+    __tablename__ = 'ar_models'
+
+    model_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    product_id = db.Column(
+        db.Integer,
+        db.ForeignKey("oc_product.product_id"),
+        nullable=False
+    )
+
+    # Campos de datos
+    name = db.Column(db.String(255), nullable=True)
+    description = db.Column(db.String(255), nullable=True)
+    visible = db.Column(db.Boolean, default=True, nullable=False)
+
+    path_to_img_front = db.Column(db.String(255), nullable=True)
+    path_to_img_side = db.Column(db.String(255), nullable=True)
+
+    path_to_img_front_flattened = db.Column(db.String(255), nullable=True)
+    path_to_img_side_flattened = db.Column(db.String(255), nullable=True)
+    path_to_img_temple_flattened = db.Column(db.String(255), nullable=True)
+
+    path_to_svg_frame = db.Column(db.String(255), nullable=True)
+    path_to_svg_glasses = db.Column(db.String(255), nullable=True)
+    path_to_svg_temple = db.Column(db.String(255), nullable=True)
+
+    polarization_info = db.Column(JSON, nullable=True)
+
+    path_to_glb = db.Column(db.String(255), nullable=True)
+
+    config_for_display = db.Column(JSON, nullable=True)
