@@ -1,11 +1,65 @@
-# app.py
-from flask import Flask, request, jsonify
-
+from werkzeug.utils import secure_filename
+import os,uuid
 import numpy as np
 import cv2 as cv
+from pathlib import Path
+from flask import current_app
+
+# --- Otros helpers ---
+
+def norm(p: str) -> str:
+    if not p:
+        return ""
+    p = p.replace("\\", "/")      
+    p = p.lstrip("/")             
+    p = p.replace("uploads/", "")
+    return p   
 
 
-# --- Constantes y helpers mínimos ---
+def _save_upload(file_storage, subdir: str, prefix: str = "") -> str | None:
+    if not file_storage or not getattr(file_storage, "filename", ""):
+        return None
+
+    root = "uploads"
+    base_dir = Path(root) / subdir
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = secure_filename(file_storage.filename)
+    # agrega un UUID corto para evitar colisiones
+    stem, ext = os.path.splitext(filename)
+    unique = f"{prefix}_{uuid.uuid4().hex[:8]}" if prefix else uuid.uuid4().hex[:8]
+    final_name = f"{stem}_{unique}{ext}"
+    path_abs = base_dir / final_name
+
+    file_storage.save(path_abs)
+    return str(path_abs.as_posix())
+
+
+def _safe_delete(relpath: str | None):
+    """Borra el archivo físico si existe. relpath es relativo a UPLOAD_FOLDER."""
+    if not relpath:
+        return
+    # normalizo por si quedó con 'uploads/' o backslashes
+    rel = relpath.replace("\\", "/").lstrip("/").replace("uploads/", "")
+    full = Path(current_app.config['UPLOAD_FOLDER']) / rel
+    try:
+        if full.exists():
+            full.unlink()
+    except Exception:
+        # si querés, loguealo
+        pass
+
+def _maybe_replace(request,lente_id,ar,file_key: str, subdir: str, attr: str):
+    """Si vino archivo en file_key: borra el viejo ar.<attr>, guarda el nuevo y setea el path."""
+    fs = request.files.get(file_key)
+    if fs and getattr(fs, "filename", ""):
+        _safe_delete(getattr(ar, attr))
+        new_path = _save_upload(fs, subdir, prefix=str(lente_id))
+        if new_path:
+            setattr(ar, attr, new_path)
+
+
+# --- Constantes y helpers polarizado ---
 Y_COEFF = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
 eps = 1e-8
 

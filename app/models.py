@@ -91,10 +91,12 @@ class Model(db.Model):
 
     path_to_img_front = db.Column(db.String(255), nullable=True)
     path_to_img_side = db.Column(db.String(255), nullable=True)
+    path_to_img_bg = db.Column(db.String(255), nullable=True)
 
     path_to_img_front_flattened = db.Column(db.String(255), nullable=True)
     path_to_img_side_flattened = db.Column(db.String(255), nullable=True)
     path_to_img_temple_flattened = db.Column(db.String(255), nullable=True)
+    path_to_img_bg_flattened = db.Column(db.String(255), nullable=True)
 
     path_to_svg_frame = db.Column(db.String(255), nullable=True)
     path_to_svg_glasses = db.Column(db.String(255), nullable=True)

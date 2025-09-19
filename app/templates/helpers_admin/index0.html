@@ -1,0 +1,182 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>index0 – Generar SVGs (frente/lateral) con umbrales y máscaras</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/panel_admin.css') }}">
+
+  <!-- Import map para three -->
+  <script type="importmap">
+  { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }}
+  </script>
+  <!-- ImageTracer -->
+  <script src="https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.min.js"></script>
+</head>
+<body>
+<div id="loader"><div class="loader">
+  <div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div>
+  <span style="color:#fff">Procesando…</span>
+</div></div>
+
+<div class="grid">
+  <aside>
+    <h3>1) Frente (aro/puente) </h3>
+    <div class="grp">
+      <label>Foto frontal (o SVG)</label>
+      <input id="frontPhoto" type="file" accept="image/*,.svg" />
+
+      <input type="hidden" id="frontMode" value="outline">
+      <input type="hidden" id="frontLtres" value="1.0" />
+      <input id="frontPathomit" type="hidden" value="10" />
+      <input id="frontNcolors" type="hidden" value="2" />
+
+      <!--<div class="row">
+        <div>
+          <label>Modo vectorizado</label>
+          <select id="frontMode">
+            <option value="outline">Contorno</option>
+            <option value="fewcolors">Pocos colores</option>
+          </select>
+        </div>
+        <div>
+          <label>ltres</label>
+          <input id="frontLtres" type="range" min="0.5" max="5" step="0.1" value="1.0" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>pathomit</label>
+          <input id="frontPathomit" type="range" min="0" max="80" step="1" value="10" />
+        </div>
+        <div>
+          <label>ncolors</label>
+          <input id="frontNcolors" type="range" min="2" max="6" step="1" value="2" />
+        </div>
+      </div> -->
+
+      <div class="row">
+        <div>
+          <label>Outer Δ (↑ más sólido)</label>
+          <input id="thrOuterDelta" type="range" min="-60" max="+60" step="1" value="20" />
+        </div>
+        <div>
+          <label>Inner Δ (↓ más detalle)</label>
+          <input id="thrInnerDelta" type="range" min="-200" max="0" step="1" value="-80" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Radio closing</label>
+          <input id="closingRadius" type="range" min="20" max="100" step="2" value="65" />
+        </div>
+        <div>
+          <label><input type="checkbox" id="chkFillHoles" checked /> Rellenar huecos</label>
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="frontToSVG">Generar SVG</button>
+        <button id="btnMasks" class="secondary" title="Ver máscaras intermedias">Actualizar</button>
+      </div>
+
+      <div class="row">
+        <button id="frontDownloadFrame" class="secondary">Descargar SVG (marco)</button>
+      </div>
+      <div class="row">
+        <button id="frontDownloadGlass" class="secondary">Descargar SVG (lentes)</button>
+      </div>
+
+      <div class="row">
+        <div>
+          <h4>Marco</h4>
+          <div id="frontFramePreview" class="preview"></div>
+        </div>
+      </div>
+      <h4>Lentes</h4>
+      <div id="frontGlassPreview" class="preview"></div>
+    </div>
+
+    <h3>2) Lateral (patilla)</h3>
+    <div class="grp">
+      <label>Foto lateral (o SVG)</label>
+      <input id="sidePhoto" type="file" accept="image/*,.svg" />
+      <div class="row">
+        <button id="sideToSVG">Generar patilla (SVG)</button>
+        <button id="sideDownload" class="secondary">Descargar SVG (patilla)</button>
+      </div>
+      <div id="sidePreview" class="preview" style="margin-top:8px"></div>
+    </div>
+  </aside>
+
+  <main>
+    <h3>Máscaras </h3>
+    <div class="row">
+      <div class="col-md">
+        <h4>Outer (umbral alto)</h4>
+        <div class="mask"><canvas id="maskOuter"></canvas></div>
+      </div>
+      <div class="col-md">
+        <h4>Inner (umbral bajo)</h4>
+        <div class="mask"><canvas id="maskInner"></canvas></div>
+      </div>
+      <div class="col-md">
+        <h4 style="margin-top:8px">Resultado procesado</h4>
+        <div class="mask"><canvas id="maskXor"></canvas></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Módulos compartidos -->
+<script type="module" src="{{ url_for('static', filename='js/helpers_morph.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/helpers_svg.js') }}"></script>
+
+<!-- Script local -->
+<script type="module">
+import { front } from "{{ url_for('static', filename='js/helpers_svg.js') }}";
+import { toGray, otsu, thresh, andWithComplementB, fillTwoBiggestAndClose } from "{{ url_for('static', filename='js/helpers_morph.js') }}";
+
+
+
+  const cvOuter = document.getElementById('maskOuter');
+  const cvInner = document.getElementById('maskInner');
+  const cvXor   = document.getElementById('maskXor');
+
+  let lastProcessed = null; // guardamos el canvas procesado para exportar
+
+  document.getElementById('btnMasks').onclick = ()=>{
+    const tex = front?.tex; 
+    if(!tex?.image){ alert('Primero generá el frente.'); return; }
+    const src = tex.image;
+    const od = parseInt(document.getElementById('thrOuterDelta').value);
+    const id = parseInt(document.getElementById('thrInnerDelta').value);
+
+    const gray = toGray(src);
+    const t = otsu(gray), 
+          tOuter=Math.max(0,Math.min(255,t+od)), 
+          tInner=Math.max(0,Math.min(255,t+id));
+    const outer = thresh(gray,tOuter);
+    const inner = thresh(gray,tInner);
+
+    const xor = andWithComplementB(inner, outer);
+
+    const radius = parseInt(document.getElementById('closingRadius').value);
+    const doFill = document.getElementById('chkFillHoles').checked;
+    const filled = fillTwoBiggestAndClose(xor, radius, doFill);
+
+    [cvOuter,cvInner,cvXor].forEach(c=>{ c.width=src.width; c.height=src.height; });
+    cvOuter.getContext('2d').drawImage(outer,0,0);
+    cvInner.getContext('2d').drawImage(inner,0,0);
+    cvXor.getContext('2d').drawImage(filled,0,0);
+
+    lastProcessed = filled;
+  };
+ 
+</script>
+</body>
+</html>

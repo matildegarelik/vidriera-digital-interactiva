@@ -7,7 +7,7 @@
     <!-- Selector de producto -->
     <div class="mb-3">
       <label class="form-label">Producto</label>
-      <select class="form-select" name="product_id" id="productSelect" required>
+      <select name="product_id" id="productSelect" required>
         <option value="" selected disabled>Seleccioná un producto…</option>
         {# productos_disponibles: iterable de (product_id, product_model, desc_name) #}
         {% for pid, pmodel, dname in productos_disponibles %}
@@ -38,96 +38,6 @@
       <div class="form-text">Por defecto: <code>ProductDescription.name</code>.</div>
     </div>
 
-    <!-- Archivos de imagen -->
-    <div class="row">
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Imagen frente (original)</label>
-        <input type="file" name="path_to_img_front" class="form-control" accept="image/*">
-      </div>
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Imagen perfil (original)</label>
-        <input type="file" name="path_to_img_side" class="form-control" accept="image/*">
-      </div>
-    </div>
-
-    <hr>
-
-    <!-- Aplanadas -->
-    <div class="row">
-      <div class="col-md-4 mb-3">
-        <label class="form-label">Imagen frente (aplanada)</label>
-        <input type="file" name="path_to_img_front_flattened" class="form-control" accept="image/*">
-      </div>
-      <div class="col-md-4 mb-3">
-        <label class="form-label">Imagen perfil (aplanada)</label>
-        <input type="file" name="path_to_img_side_flattened" class="form-control" accept="image/*">
-      </div>
-      <div class="col-md-4 mb-3">
-        <label class="form-label">Imagen patilla (aplanada)</label>
-        <input type="file" name="path_to_img_temple_flattened" class="form-control" accept="image/*">
-      </div>
-      <div class="col-md-12 mb-3">
-        <a href="#" class="btn btn-info text-light btn-block">Helper para generarlas</a>
-      </div>
-    </div>
-
-    <hr>
-
-    <!-- SVGs -->
-    <div class="row">
-      <div class="col-md-4 mb-3">
-        <label class="form-label">SVG marco</label>
-        <input type="file" name="path_to_svg_frame" class="form-control" accept=".svg,image/svg+xml">
-      </div>
-      <div class="col-md-4 mb-3">
-        <label class="form-label">SVG lentes</label>
-        <input type="file" name="path_to_svg_glasses" class="form-control" accept=".svg,image/svg+xml">
-      </div>
-      <div class="col-md-4 mb-3">
-        <label class="form-label">SVG patilla</label>
-        <input type="file" name="path_to_svg_temple" class="form-control" accept=".svg,image/svg+xml">
-      </div>
-      <div class="col-md-12 mb-3">
-        <a href="#" class="btn btn-info text-light btn-block">Helper para generarlos</a>
-      </div>
-    </div>
-
-    <hr>
-
-    <!-- GLB -->
-    <div class="mb-3">
-      <label class="form-label">Modelo 3D (.glb)</label>
-      <input type="file" name="path_to_glb" class="form-control" accept=".glb,model/gltf-binary">
-    </div>
-    <div class="col-md-12 mb-3">
-        <a href="#" class="btn btn-info text-light btn-block">Helper para armarlo</a>
-    </div>
-
-    <hr>
-
-    <!-- JSONs -->
-    <div class="mb-3">
-      <label class="form-label">Polarization Info (JSON)</label>
-      <textarea name="polarization_info" class="form-control" rows="3" placeholder='{"tint":"gray","intensity":0.5}'></textarea>
-      <div class="form-text">Pegá un JSON válido o dejá vacío.</div>
-    </div>
-    <div class="col-md-12 mb-3">
-        <a href="#" class="btn btn-info text-light btn-block">Completar a partir de imagen aplanada</a>
-    </div>
-
-    <hr>
-
-    <div class="mb-3">
-      <label class="form-label">Config for Display (JSON)</label>
-      <textarea name="config_for_display" class="form-control" rows="3" placeholder='{"scale":1.0,"offset":{"x":0,"y":0}}'></textarea>
-      <div class="form-text">Pegá un JSON válido o dejá vacío.</div>
-    </div>
-    <div class="col-md-12 mb-3">
-        <a href="#" class="btn btn-info text-light btn-block">Helper para armarlo</a>
-    </div>
-
-    <hr>
-
     <div class="d-flex gap-2">
       <button type="submit" class="btn btn-success">Crear</button>
       <a href="{{ url_for('main.home_admin') }}" class="btn btn-secondary">Cancelar</a>
@@ -136,22 +46,42 @@
 </div>
 
 <script>
-  // Al seleccionar un producto, autocompleta la descripción del AR Model
+document.addEventListener('DOMContentLoaded', () => {
   const selectEl = document.getElementById('productSelect');
-  const descEl = document.getElementById('arDescription');
-  const nameEl = document.getElementById('arName');
+  const descEl   = document.getElementById('arDescription');
+  const nameEl   = document.getElementById('arName');
 
-  selectEl?.addEventListener('change', () => {
-    const opt = selectEl.options[selectEl.selectedIndex];
-    const pmodel = opt.getAttribute('data-pmodel') || '';
-    const dname  = opt.getAttribute('data-dname')  || '';
-    // sólo setea si el usuario no escribió nada aún
-    if (!descEl.value || descEl.value.trim() === '') {
-      descEl.value = dname;
-    }
-    if(!nameEl.value || nameEl.value.trim() === ''){
-      nameEl.value = pmodel;
+  // Inicializa Tom Select
+  const ts = new TomSelect('#productSelect', {
+    create: false,
+    allowEmptyOption: true,
+    maxOptions: 5000,
+    placeholder: 'Seleccioná un producto…',
+    render: {
+      option: (data, escape) => `<div>${escape(data.text)}</div>`
     }
   });
+
+  // Completar campos cuando cambia la selección (incluye búsquedas)
+  ts.on('change', (value) => {
+    if (!value) return;
+    const opt = selectEl.querySelector(`option[value="${CSS.escape(value)}"]`);
+    if (!opt) return;
+
+    const pmodel = opt.getAttribute('data-pmodel') || '';
+    const dname  = opt.getAttribute('data-dname')  || '';
+
+    // antes solo recargaba si estaban vacíos, ahora siempre q se cambie el select
+    //if (!nameEl.value?.trim()) nameEl.value = pmodel;
+    //if (!descEl.value?.trim()) descEl.value = dname;
+    nameEl.value = pmodel;
+    descEl.value = dname;
+  });
+
+  // Si ya hay un valor precargado (ej. back/validación), dispara el fill
+  if (selectEl.value) ts.setValue(selectEl.value, true);
+});
 </script>
+
+
 {% endblock %}

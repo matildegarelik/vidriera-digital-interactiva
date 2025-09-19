@@ -1,0 +1,617 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>index1 – Cargar 3 SVGs y construir 3D</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/panel_admin.css') }}">
+
+  <script type="importmap">
+    { "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="loader"><div class="loader">
+  <div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div>
+  <span style="color:#fff">Procesando…</span>
+</div></div>
+<div class="grid">
+  <aside>
+    <div class="grp" style="display:none;">
+      <label>Marco (frente_marco.svg)</label>
+      <input id="svgMarco" type="file" accept=".svg" />
+      <label>Lentes (frente_lentes.svg)</label>
+      <input id="svgLentes" type="file" accept=".svg" />
+      <label>Patilla (patilla.svg)</label>
+      <input id="svgPatilla" type="file" accept=".svg" />
+      <div class="row">
+        <button id="build">Construir 3D</button>
+        <button id="fit" class="secondary">Auto-encuadrar</button>
+      </div>
+    </div>
+
+
+    <h3>Lentes</h3>
+    <div class="grp">
+      <label>Escala lentes</label>
+      <input id="glassScale" type="range" min="0.6" max="1.6" step="0.01" value="1.00">
+    </div>
+
+
+    <h3>Bisagras & Patillas</h3>
+    <div class="grp">
+      <label>Bisagra X</label><input id="hingeX" type="range" min="0.03" max="1.2" step="0.001" value="0.6">
+      <label>Bisagra Y</label><input id="hingeY" type="range" min="-0.03" max="0.40" step="0.001" value="0.02">
+      <label>Bisagra Z</label><input id="hingeZ" type="range" min="-0.03" max="0.03" step="0.001" value="0.000">
+      <label>Rotación patilla (°)</label><input id="rotPat" type="range" min="0" max="180" step="1" value="90">
+      <label>Escala patilla</label><input id="scalePat" type="range" min="0.6" max="1.6" step="0.01" value="1.00">
+    </div>
+
+    <h3>Exportar</h3>
+    <div class="grp">
+      <button id="exportGLB">Descargar GLB</button>
+      <button id="saveGLB" data-model-id="{{ model_id }}">Guardar modelo</button>
+    </div>
+
+  </aside>
+
+  <main>
+    <div id="bar">Arrastrá con el mouse (OrbitControls)</div>
+    <canvas id="canvas3d"></canvas>
+  </main>
+</div>
+
+<script>
+  window.PRELOAD = {
+    marcoUrl:  "{{ marco_url|default('', true) }}",
+    lentesUrl: "{{ lentes_url|default('', true) }}",
+    patUrl:    "{{ pat_url|default('', true) }}",
+    polarizationInfo: {{ polarization_info|safe if polarization_info else '{}' }}
+  };
+
+  window.FRONT_IMG_URL  = "{{ front_img_url }}";
+  window.TEMPLE_IMG_URL = "{{ temple_img_url }}";
+</script>
+
+<!-- HELPERS -->
+<script type="module" src="{{ url_for('static', filename='js/helpers_3d.js') }}"></script>
+
+<!-- Lógica 3D (reutiliza lo que ya tenías) -->
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { SVGLoader }   from "three/examples/jsm/loaders/SVGLoader.js";
+import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
+
+import { setLoading, makePivotAtHinge, clonePatillasAlways, saveBufferAsFile, bakeWorldTransforms , fileToDataURL, makeTintRGBAFromAlphaRows, 
+  bgrToHex, colorToInt, bindExportGLB,composeClippedImageSVG, svgTextToTexture } from '{{ url_for('static', filename='js/helpers_3d.js') }}';
+
+const front = { frameText:'', glassText:'', tex:null };
+const side  = { text:'', tex:null };
+const POL = (window.PRELOAD && window.PRELOAD.polarizationInfo) || {};
+
+async function preloadIfAvailable() {
+  const P = window.PRELOAD || {};
+  const getTxt = async (u) => u ? await (await fetch(u)).text() : '';
+
+  const [marco, lentes, pat] = await Promise.all([
+    getTxt(P.marcoUrl),
+    getTxt(P.lentesUrl),
+    getTxt(P.patUrl)
+  ]);
+
+  if (marco) front.frameText = marco;
+  if (lentes) front.glassText = lentes;
+  if (pat)    side.text = pat;
+
+  if (front.frameText && front.glassText && side.text) {
+    document.getElementById('build').click()
+  }
+}
+
+preloadIfAvailable();
+
+
+
+function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 0xdddddd, role = 'generic', tex = null}){
+  // normalización mínima de namespaces
+  let txt = svgText
+    .replace(/<\s*(\/?)\s*[a-zA-Z_][\w.-]*:/g, '<$1')
+    .replace(/\sxmlns:[^=]+="[^"]*"/g, '');
+  if (!/xmlns=/.test(txt)) {
+    txt = txt.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+  }
+
+  const loader = new SVGLoader();
+  const data   = loader.parse(txt);
+
+  const group = new THREE.Group();
+
+  // ---- área de referencia (para detectar fondos) ----
+  let refBox = null;
+  for (const path of data.paths) {
+    for (const sp of (path.subPaths || [])) {
+      const pts = sp.getPoints(8);
+      if (!pts.length) continue;
+      const b = new THREE.Box2().setFromPoints(pts);
+      refBox = refBox ? refBox.union(b) : b.clone();
+    }
+  }
+  if(!refBox) refBox = new THREE.Box2(new THREE.Vector2(0,0), new THREE.Vector2(1000,1000));
+  const refW = refBox.max.x - refBox.min.x, refH = refBox.max.y - refBox.min.y;
+  const refA = Math.max(1e-3, refW*refH);
+
+  // ---- helpers ----
+  const isBigBackgroundRect = (path)=>{
+    const node = path.userData?.node;
+    if (!node || node.tagName !== 'rect') return false;
+    const w = parseFloat(node.getAttribute('width')  || '0');
+    const h = parseFloat(node.getAttribute('height') || '0');
+    return (w*h)/refA > 0.90;
+  };
+  const isCanvasLikePts = (pts)=>{                // fondo como <path>
+    if (!pts.length) return false;
+    const b = new THREE.Box2().setFromPoints(pts);
+    const bw=b.max.x-b.min.x, bh=b.max.y-b.min.y;
+    const cover = (bw*bh)/refA;
+    const eps = Math.max(1, 0.01*Math.max(refW,refH));
+    const touches =
+      Math.abs(b.min.x-refBox.min.x)<eps && Math.abs(b.max.x-refBox.max.x)<eps &&
+      Math.abs(b.min.y-refBox.min.y)<eps && Math.abs(b.max.y-refBox.max.y)<eps;
+    return cover>0.98 && touches;
+  };
+  const isWhiteFill = (node)=>{
+    const f = (node?.getAttribute?.('fill') || '').toLowerCase();
+    return f === 'white' || f === '#fff' || f === '#ffffff' ||
+           /rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)/.test(f);
+  };
+
+  // UVs “coherentes” en XY (sirve para mapear la textura)
+  const opts = {
+    depth,
+    bevelEnabled:false,
+    curveSegments,
+    UVGenerator: THREE.ExtrudeGeometry.WorldUVGenerator
+  };
+  const S = 0.002; // px -> m  (Y invertida)
+
+  // material base (map SIEMPRE si viene tex)
+  const baseMat = new THREE.MeshStandardMaterial({
+    color,
+    metalness:0.1,
+    roughness:0.7,
+    side:THREE.DoubleSide,
+    map: tex || null
+  });
+
+  // ===========================
+  //      FRONT (MARCO)
+  // ===========================
+  if (role === 'front') {
+    // 1) Recolectar SOLO paths BLANCOS, filtrando “fondos” rect y canvas-like
+    const whiteShapes = [];
+    for (const path of data.paths) {
+      const node = path.userData?.node;
+
+      // ignora rect de fondo gigante
+      if (isBigBackgroundRect(path)) continue;
+
+      // ignora paths NO blancos
+      if (!isWhiteFill(node)) continue;
+
+      // shapes del path (respeta fill-rule)
+      let ss = [];
+      try { ss =SVGLoader.createShapes(path); } catch {}
+
+      // filtrar shapes que cubren casi todo el lienzo (canvas-like)
+      for (const s of ss) {
+        const pts = s.getPoints(100);
+        if (isCanvasLikePts(pts)) continue;
+        whiteShapes.push(s);
+      }
+    }
+
+    if (!whiteShapes.length) return group;
+
+    // 2) Extruir TODAS las shapes blancas (las holes internas del mismo path ya vienen)
+    const geom = new THREE.ExtrudeGeometry(whiteShapes, opts);
+    geom.scale(S, -S, S);
+    geom.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geom, baseMat.clone());
+    group.add(mesh);
+
+    // centrar el grupo (como ya hacías)
+    const bbox=new THREE.Box3().setFromObject(group);
+    if(!bbox.isEmpty()){ const c=bbox.getCenter(new THREE.Vector3()); group.position.sub(c); }
+    return group;
+  }
+
+  // ===========================
+  //  GLASS / SIDE 
+  // ===========================
+  const MAX_AREA_RATIO = role === 'side' ? 0.60 : 0.50;
+  const MIN_AREA       = role === 'side' ? 150  :  80;
+
+  for (const path of data.paths) {
+    if (isBigBackgroundRect(path)) continue;
+
+    let shapes=[];
+    try { shapes = SVGLoader.createShapes(path); } catch {}
+
+    for (const shape of shapes) {
+      const pts = shape.getPoints(12);
+      if (!pts.length) continue;
+      const b = new THREE.Box2().setFromPoints(pts);
+      const area  = (b.max.x-b.min.x)*(b.max.y-b.min.y);
+      const ratio = area/refA;
+      if (ratio > MAX_AREA_RATIO || area < MIN_AREA) continue;
+
+      const g = new THREE.ExtrudeGeometry(shape, opts);
+      g.scale(S,-S,S); g.computeVertexNormals();
+      group.add(new THREE.Mesh(g, baseMat.clone()));
+    }
+  }
+
+  // Fallback: mayor shape si no pasó nada
+  if (group.children.length === 0) {
+    let best=null, bestA=0;
+    for (const path of data.paths) {
+      if (isBigBackgroundRect(path)) continue;
+      let shapes=[]; try{ shapes=SVGLoader.createShapes(path);}catch{}
+      for (const s of shapes) {
+        const pts=s.getPoints(12); if(!pts.length) continue;
+        const b=new THREE.Box2().setFromPoints(pts);
+        const a=(b.max.x-b.min.x)*(b.max.y-b.min.y);
+        if(a>bestA){ bestA=a; best=s; }
+      }
+    }
+    if (best) {
+      const g=new THREE.ExtrudeGeometry(best, opts);
+      g.scale(S,-S,S); g.computeVertexNormals();
+      group.add(new THREE.Mesh(g, baseMat.clone()));
+    }
+  }
+
+  const bbox=new THREE.Box3().setFromObject(group);
+  if(!bbox.isEmpty()){ const c=bbox.getCenter(new THREE.Vector3()); group.position.sub(c); }
+  return group;
+}
+
+// ---- 3D setup ----
+const ui = {
+  glassScale: document.getElementById('glassScale'),
+  hingeX: document.getElementById('hingeX'),
+  hingeY: document.getElementById('hingeY'),
+  hingeZ: document.getElementById('hingeZ'),
+  rotPat: document.getElementById('rotPat'),
+  scalePat: document.getElementById('scalePat'),
+  build: document.getElementById('build'),
+  fit:   document.getElementById('fit'),
+};
+
+
+const canvas = document.getElementById('canvas3d');
+const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x141414);
+const camera = new THREE.PerspectiveCamera(45,1,0.001,100);
+camera.position.set(0,0,0.35);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.AmbientLight(0xffffff,0.7));
+const dir = new THREE.DirectionalLight(0xffffff,0.9); dir.position.set(1,1,1); scene.add(dir);
+
+function resize(){ const w=canvas.clientWidth, h=canvas.clientHeight||300; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(canvas);
+
+const assembled = new THREE.Group(); scene.add(assembled);
+let marco=null, patillaL=null, patillaR=null;
+let lensPivotL=null, lensPivotR=null; let lensMeshes=[];
+
+function alignLensesMidpointToFrame(){
+  if (!marco) return;
+
+  // centro del marco en mundo
+  const cF = new THREE.Vector3();
+  new THREE.Box3().setFromObject(marco).getCenter(cF);
+
+  // centro de los lentes (punto medio de ambos pivots)
+  let cG = null;
+  if (lensPivotL && lensPivotR) {
+    cG = new THREE.Vector3().addVectors(lensPivotL.position, lensPivotR.position).multiplyScalar(0.5);
+  } else if (lensPivotL || lensPivotR) {
+    // fallback si solo hay uno
+    const p = lensPivotL || lensPivotR;
+    cG = p.position.clone();
+  } else {
+    return;
+  }
+
+  // delta para alinear centros
+  const delta = cF.clone().sub(cG);
+
+  // mover ambos pivots por la misma delta (no rompe su separación relativa)
+  if (lensPivotL) lensPivotL.position.add(delta);
+  if (lensPivotR) lensPivotR.position.add(delta);
+}
+
+
+function fitCameraToObject(obj, offset=1.25){
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = new THREE.Vector3(); box.getSize(size);
+  const center = new THREE.Vector3(); box.getCenter(center);
+  const maxSize=Math.max(size.x,size.y,size.z);
+  const fov=camera.fov*(Math.PI/180);
+  const dist=(maxSize/(2*Math.tan(fov/2)))*offset;
+  camera.position.set(center.x, center.y, dist);
+  camera.near=dist/100; camera.far=dist*100; camera.updateProjectionMatrix();
+  camera.lookAt(center); controls.target.copy(center);
+}
+
+function positionGlasses(){
+  const s = parseFloat(ui.glassScale.value);
+  if (lensPivotL) lensPivotL.scale.set(s, s, s);
+  if (lensPivotR) lensPivotR.scale.set(s, s, s);
+}
+
+function positionPatillas(){
+  if(!patillaL||!patillaR||!marco) return;
+  const hx=parseFloat(ui.hingeX.value), hy=parseFloat(ui.hingeY.value), hz=parseFloat(ui.hingeZ.value);
+  const openRad=THREE.MathUtils.degToRad(parseInt(ui.rotPat.value));
+  const scaleP=parseFloat(ui.scalePat.value);
+  [patillaL,patillaR].forEach(p=>{ p.position.set(0,0,0); p.rotation.set(0,0,0); p.scale.set(1,1,1); });
+  patillaL.scale.multiplyScalar(scaleP); patillaR.scale.multiplyScalar(scaleP);
+  patillaL.rotation.y=+openRad; patillaR.rotation.y=-openRad;
+  patillaL.position.set(-hx,hy,hz); patillaR.position.set(hx,hy,hz);
+}
+
+async function buildModel(){
+  if(!front.frameText || !front.glassText || !side.text){ alert('Cargá los 3 SVGs primero.'); return; }
+    assembled.clear(); marco=patillaL=patillaR=null;
+
+    // --- texturas desde FOTOS reales 
+  if (!front.tex && window.FRONT_IMG_URL) {
+    const marcoImgHref = window.FRONT_IMG_URL;              // viene del backend
+    const clippedSVG   = composeClippedImageSVG(front.frameText, marcoImgHref);
+    front.tex = await svgTextToTexture(clippedSVG, 2048);
+    front.tex.needsUpdate = true;
+  }
+
+  if (!side.tex && window.TEMPLE_IMG_URL) {
+    const patImgHref   = window.TEMPLE_IMG_URL;             // viene del backend
+    const clippedSVG2  = composeClippedImageSVG(side.text, patImgHref);
+    side.tex = await svgTextToTexture(clippedSVG2, 2048);
+    side.tex.needsUpdate = true;
+  }
+
+
+  const DEPTH_FRONT = 1.5;
+  const DEPTH_SIDE = 1.2;
+  const CURVE_SEG = 12;
+
+
+  const frameGroup = extrudeFromSVGText(front.frameText, {
+    depth: parseFloat(DEPTH_FRONT)/100.0,
+    curveSegments: parseInt(CURVE_SEG),
+    role: 'front',
+    tex: front.tex
+  });
+  marco = frameGroup;
+
+  assembled.add(frameGroup)
+
+  const glassGroup = extrudeFromSVGText(front.glassText, {
+    depth: Math.max(0.0008, parseFloat(DEPTH_FRONT)/100.0*0.12),
+    curveSegments: parseInt(CURVE_SEG),
+    color: 0x999999,
+    role: 'glass'
+  });
+
+  // Polarizado 
+  try {
+    if (POL?.alpha_rows?.length) {
+      const tintHex = bgrToHex(POL.tinte_BGR || [0,0,0]);
+      const texRGBA = makeTintRGBAFromAlphaRows(512, tintHex, POL.alpha_rows);
+      const glassMat = new THREE.MeshStandardMaterial({
+        color: tintHex,
+        map: texRGBA,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        side: THREE.FrontSide,
+        metalness: 0.0,
+        roughness: 0.1
+      });
+      glassGroup.traverse(o => {
+        if (o.isMesh) {
+          o.material = glassMat;
+          o.renderOrder = 2;
+        }
+      });
+    }
+  } catch {}
+
+
+  // --- separar mallas de lentes, detectar izquierda/derecha y crear pivots ---
+  lensPivotL = new THREE.Group();
+  lensPivotR = new THREE.Group();
+  lensMeshes = [];
+ 
+  // recolectar TODAS las mallas dentro del glassGroup
+  glassGroup.traverse(o => { if (o.isMesh) lensMeshes.push(o); });
+  if (lensMeshes.length === 0) {
+    // si por algún motivo vino 1 sola malla (dos lentes en una sola geo),
+    // escalaremos alrededor del centro de cada “sub-mesh” no es trivial; en ese caso
+    // caemos a un pivot común para que al menos escale centrado global:
+    const pivot = new THREE.Group();
+    const c = new THREE.Vector3(); new THREE.Box3().setFromObject(glassGroup).getCenter(c);
+    glassGroup.position.sub(c); pivot.position.copy(c);
+    pivot.add(glassGroup);
+    assembled.add(pivot);
+  } 
+  else {
+    // calcular centro y tamaño XY de cada malla
+    const info = lensMeshes.map(m => {
+      const box = new THREE.Box3().setFromObject(m);
+      const c = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const areaXY = size.x * size.y;
+      return { mesh:m, cx:c.x, center:c, areaXY };
+    });
+    // elegimos las dos mallas más grandes como lentes principales
+    info.sort((a,b)=> b.areaXY - a.areaXY);
+    const main = info.slice(0, 2);
+    // si hay extras (ruido), los asignamos al pivot más cercano en X
+    const extras = info.slice(2);
+ 
+    // ordenar las dos principales por X para tener L y R
+    main.sort((a,b)=> a.cx - b.cx);
+    const left  = main[0];
+    const right = main[1] || main[0]; // por si solo hay una, evitar crash
+ 
+    // mover cada malla para que su centro quede en (0,0,0) del pivot correspondiente
+    left.mesh.position.sub(left.center);
+    lensPivotL.position.copy(left.center);
+    lensPivotL.add(left.mesh);
+ 
+    right.mesh.position.sub(right.center);
+    lensPivotR.position.copy(right.center);
+    lensPivotR.add(right.mesh);
+ 
+    // asignar extras al pivot más cercano en X
+    for (const e of extras) {
+      const dL = Math.abs(e.cx - left.center.x);
+      const dR = Math.abs(e.cx - right.center.x);
+      e.mesh.position.sub(e.center);
+      (dL <= dR ? lensPivotL : lensPivotR).add(e.mesh);
+    }
+ 
+    // agregar a la escena los dos pivots (las posiciones “originales” se preservan)
+   assembled.add(lensPivotL, lensPivotR);
+ }
+
+  const base = extrudeFromSVGText(side.text, {
+    depth: parseFloat(DEPTH_SIDE)/100.0,
+    curveSegments: parseInt(CURVE_SEG),
+    role: 'side',
+    tex: side.tex
+  });
+  const { L, R } = clonePatillasAlways(base, { mirrorRight:true });
+  patillaL=L; patillaR=R; assembled.add(patillaL, patillaR);
+
+  alignLensesMidpointToFrame(); positionGlasses(); 
+  positionPatillas(); fitCameraToObject(assembled);
+}
+
+ui.build.onclick = async ()=> {
+  setLoading(true)
+  try { await buildModel(); }
+  finally { setLoading(false); }
+};
+ui.fit.onclick   = ()=> { if(assembled.children.length) fitCameraToObject(assembled); };
+['input','change'].forEach(ev=>{
+  ['hingeX','hingeY','hingeZ','rotPat','scalePat']
+    .forEach(id=>document.getElementById(id).addEventListener(ev, positionPatillas));
+  ['glassScale']
+    .forEach(id=>document.getElementById(id).addEventListener(ev, positionGlasses));
+});
+
+
+// Carga de los 3 SVGs
+const readText = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsText(f); });
+
+document.getElementById('svgMarco').addEventListener('change', async e=>{
+  const f=e.target.files?.[0]; if(!f) return; front.frameText = await readText(f); 
+});
+document.getElementById('svgLentes').addEventListener('change', async e=>{
+  const f=e.target.files?.[0]; if(!f) return; front.glassText = await readText(f);
+});
+document.getElementById('svgPatilla').addEventListener('change', async e=>{
+  const f=e.target.files?.[0]; if(!f) return; side.text = await readText(f); side.tex=null;
+});
+
+// Export GLB
+bindExportGLB(assembled, { GLTFExporter, bakeWorldTransforms, saveBufferAsFile });
+
+// render loop
+function tick(){ controls.update(); renderer.render(scene,camera); requestAnimationFrame(tick); }
+tick();
+
+window.buildGLB = async () => {
+  if (!assembled.children.length) {
+    throw new Error('Construí el modelo primero.');
+  }
+
+  const exportRoot = bakeWorldTransforms(assembled);
+  const exporter   = new GLTFExporter();
+  const result     = await exporter.parseAsync(exportRoot, {
+    binary: true,
+    onlyVisible: true,
+    includeCustomExtensions: true,
+    forcePowerOfTwoTextures: false
+  });
+
+  if (!(result instanceof ArrayBuffer)) {
+    const json = JSON.stringify(result);
+    return new Blob([json], { type: 'model/gltf+json' });
+  }
+  return new Blob([result], { type: 'model/gltf-binary' });
+};
+
+</script>
+
+<script>
+(() => {
+  const btn = document.getElementById('saveGLB');
+  if (!btn) return;
+
+  // 1) Tomamos el modelId del data-attribute; si no está, caemos al path
+  const modelId =
+    btn.dataset.modelId ||
+    (window.location.pathname.split('/').filter(Boolean).pop());
+
+  async function getGlbBlob() {
+    // buildGLB la expusiste desde tu <script type="module"> como window.buildGLB
+    if (typeof window.buildGLB !== 'function') {
+      throw new Error('buildGLB no definido: asegurate de exponerlo como window.buildGLB en el <script type="module">');
+    }
+    const out = await window.buildGLB();
+    return (out instanceof Blob) ? out : new Blob([out], { type: 'model/gltf-binary' });
+  }
+
+  btn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    try {
+      const blob = await getGlbBlob();
+
+      const fd = new FormData();
+      fd.append('glb', new File([blob], `model_${modelId}.glb`, { type: 'model/gltf-binary' }));
+
+      // posteamos a la MISMA ruta en la que estamos (/_admin_helpers/svgs_to_glb/<id>)
+      const resp = await fetch(window.location.pathname, { method: 'POST', body: fd });
+      if (!resp.ok) throw new Error('Respuesta HTTP no OK');
+
+      const data = await resp.json();
+      if (data.ok && data.redirect) {
+        window.location = data.redirect;   // volvemos al detalle del lente
+      } else {
+        console.error(data);
+        alert('No se pudo guardar el GLB.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error generando o subiendo el GLB.');
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

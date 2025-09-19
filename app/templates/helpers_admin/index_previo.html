@@ -1,0 +1,427 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Index Previo – Aplanado y Pintura</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/panel_admin.css') }}">
+  <style>
+    /* Ajustes mínimos de layout específico de este index */
+    .steps { display: grid; gap: 12px; }
+    .step { border:1px solid #222; border-radius: 10px; padding: 12px; background:#111; }
+    .step h3 { margin:0 0 6px; font-size:15px; }
+    .cols { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .previewBox { background:#0f0f0f; border:1px solid #222; border-radius:8px; min-height:240px; display:grid; place-items:center; overflow:hidden; }
+    .previewBox canvas, .previewBox img { max-width:100%; max-height:440px; display:block; }
+    .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .mini { font-size:12px; opacity:.85; }
+    .chip { padding:4px 8px; border:1px solid #333; border-radius:8px; }
+    .row2 { display:flex; gap:8px; align-items:center; }
+    .spacer { flex:1 }
+    .hint { font-size:12px; opacity:.8 }
+  </style>
+</head>
+<body>
+
+<!-- Loader -->
+<div id="loader"><div class="loader">
+  <div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div>
+  <span style="color:#fff">Procesando…</span>
+</div></div>
+
+<div class="prev-grid">
+  <main class="prev">
+    <div class="steps">
+
+      <!-- Paso 1: entradas -->
+      <div class="step" data-step="1">
+        <h3>1) Cargar 3 fotos</h3>
+        <div class="grp">
+          <label>Frente (lentes de frente)</label>
+          <input id="inFront" type="file" accept="image/*" />
+          <label>Costado (lentes de costado)</label>
+          <input id="inSide" type="file" accept="image/*" />
+          <label>Fondo solo (mismo setup de iluminación)</label>
+          <input id="inBg" type="file" accept="image/*" />
+          <div class="row">
+            <button id="btnFlatten">Aplanar</button><br/>
+            <span class="hint">Conviene que las 3 fotos tengan el **mismo encuadre**.</span>
+          </div>
+        </div>
+        <div class="wizard-nav">
+            <button class="js-next" data-goto="2" id="goStep2" disabled>Siguiente</button>
+        </div>
+      </div>
+
+      <!-- Paso 2: resultado aplanado -->
+      <div class="step" data-step="2">
+        <h3>2) Resultados aplanados</h3>
+        <div class="cols">
+          <div>
+            <h4>Frente (aplanada)</h4>
+            <div class="previewBox"><canvas id="cvFrontFlat"></canvas></div>
+          </div>
+          <div>
+            <h4>Costado (aplanada)</h4>
+            <div class="previewBox"><canvas id="cvSideFlat"></canvas></div>
+          </div>
+        </div>
+        <div class="wizard-nav">
+            <button class="secondary js-prev" data-goto="1">Volver</button>
+            <button class="js-next" data-goto="3">Siguiente</button>
+        </div>
+      </div>
+
+      <!-- Paso 3: pintar sobre costado aplanado -->
+      <div class="step" data-step="3">
+        <h3>3) Pintar sobre la patilla aplanada</h3>
+        <div class="grp toolbar">
+          <div class="row2">
+            <label class="mini">Grosor</label>
+            <input id="brushSize" type="range" min="1" max="80" step="1" value="25">
+          </div>
+          <div class="row2">
+            <label class="mini">Color</label>
+            <input id="brushColor" type="color" value="#ffffff">
+          </div>
+          <button id="pickColor" class="secondary">Cuentagotas</button>
+          <button id="useBgColor" class="secondary">Usar color de fondo</button>
+          <span class="chip mini">Pintá para “limpiar” lo innecesario</span>
+          <span class="spacer"></span>
+          <button id="clearPaint" class="secondary">Limpiar pintura</button>
+        </div>
+        <div class="previewBox">
+          <!-- Lienzo de pintura: imagen aplanada + overlay -->
+          <canvas id="cvPaint"></canvas>
+        </div>
+        <div class="wizard-nav">
+            <button class="secondary js-prev" data-goto="2">Volver</button>
+            <button class="js-next" data-goto="4">Siguiente</button>
+        </div>
+      </div>
+
+      <!-- Paso 4: descarga -->
+      <div class="step" data-step="4">
+        <h3>4) Descargar</h3>
+        <div class="row">
+          <button id="dlFront">Descargar Frente (aplanada)</button>
+          <button id="dlSide">Descargar Costado (aplanada + pintura)</button>
+        </div>
+      </div>
+    </div>
+</main>
+
+  
+</div>
+
+<script type="module">
+/* ======================
+   Utilidades generales
+   ====================== */
+function setLoading(on){
+  const el = document.getElementById('loader');
+  el.style.display = on ? 'flex' : 'none';
+}
+
+function fileToImage(file){
+  return new Promise((res, rej)=>{
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = ()=>{ URL.revokeObjectURL(url); res(img); };
+    img.onerror= rej;
+    img.src = url;
+  });
+}
+
+function createCanvasLike(w,h){
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return c;
+}
+
+/* ======================
+   sRGB <-> lineal
+   ====================== */
+function srgbToLinear(v){
+  // v en [0,1]
+  return (v <= 0.04045) ? (v/12.92) : Math.pow((v+0.055)/1.055, 2.4);
+}
+function linearToSrgb(v){
+  return (v <= 0.0031308) ? (12.92*v) : (1.055*Math.pow(v,1/2.4)-0.055);
+}
+function srgbArrToLinear(src, dst){
+  // src Uint8ClampedArray RGBA; dst Float32Array RGB (opcional) o in-place float
+  const N = src.length/4;
+  const out = dst || new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const r = src[4*i]/255, g = src[4*i+1]/255, b = src[4*i+2]/255;
+    out[3*i]   = srgbToLinear(r);
+    out[3*i+1] = srgbToLinear(g);
+    out[3*i+2] = srgbToLinear(b);
+  }
+  return out;
+}
+function linearToSrgbImageData(srcLin, w, h){
+  const out = new ImageData(w, h);
+  const N = w*h;
+  for(let i=0;i<N;i++){
+    out.data[4*i  ] = Math.round(255 * Math.min(1, Math.max(0, linearToSrgb(srcLin[3*i]))));
+    out.data[4*i+1] = Math.round(255 * Math.min(1, Math.max(0, linearToSrgb(srcLin[3*i+1]))));
+    out.data[4*i+2] = Math.round(255 * Math.min(1, Math.max(0, linearToSrgb(srcLin[3*i+2]))));
+    out.data[4*i+3] = 255;
+  }
+  return out;
+}
+
+/* ======================
+   Aplanado por división
+   ====================== */
+async function flattenWithBackground({imgFront, imgSide, imgBg}){
+  // 1) Normalizamos tamaños a la del fondo (asumimos mismo encuadre)
+  const W = imgBg.naturalWidth, H = imgBg.naturalHeight;
+
+  // Canvases base
+  const cFront = createCanvasLike(W,H),  xF = cFront.getContext('2d');
+  const cSide  = createCanvasLike(W,H),  xS = cSide.getContext('2d');
+  const cBg    = createCanvasLike(W,H),  xB = cBg.getContext('2d');
+
+  xF.drawImage(imgFront, 0,0, W,H);
+  xS.drawImage(imgSide , 0,0, W,H);
+  xB.drawImage(imgBg   , 0,0, W,H);
+
+  // 2) sRGB -> lineal
+  const idF = xF.getImageData(0,0,W,H);
+  const idS = xS.getImageData(0,0,W,H);
+  const idB = xB.getImageData(0,0,W,H);
+
+  const F_lin = srgbArrToLinear(idF.data); // Float32 RGB
+  const S_lin = srgbArrToLinear(idS.data);
+  const B_lin = srgbArrToLinear(idB.data);
+
+  // 3) Campo de iluminación lenta v_lin ≈ blur grande del fondo
+  //    (blur por navegador, equivalente conceptual a Gauss sigma~45px)
+  const cBlur = createCanvasLike(W,H), xBLUR = cBlur.getContext('2d');
+  xBLUR.filter = 'blur(45px)';
+  xBLUR.drawImage(imgBg, 0,0, W,H);
+  const idV = xBLUR.getImageData(0,0,W,H);
+  const V_srgb = idV.data;
+  const V_lin = srgbArrToLinear(V_srgb);
+
+  // 4) División por canal + clip (evita divisiones por ~0)
+  const eps = 1e-4, N = W*H;
+  const F_flat = new Float32Array(N*3);
+  const S_flat = new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const rI=3*i, rV=3*i;
+    F_flat[rI  ] = Math.min(1, Math.max(0, F_lin[rI  ] / Math.max(eps, V_lin[rV  ])));
+    F_flat[rI+1] = Math.min(1, Math.max(0, F_lin[rI+1] / Math.max(eps, V_lin[rV+1])));
+    F_flat[rI+2] = Math.min(1, Math.max(0, F_lin[rI+2] / Math.max(eps, V_lin[rV+2])));
+    S_flat[rI  ] = Math.min(1, Math.max(0, S_lin[rI  ] / Math.max(eps, V_lin[rV  ])));
+    S_flat[rI+1] = Math.min(1, Math.max(0, S_lin[rI+1] / Math.max(eps, V_lin[rV+1])));
+    S_flat[rI+2] = Math.min(1, Math.max(0, S_lin[rI+2] / Math.max(eps, V_lin[rV+2])));
+  }
+
+  // 5) Volver a sRGB
+  const outFront = linearToSrgbImageData(F_flat, W, H);
+  const outSide  = linearToSrgbImageData(S_flat, W, H);
+
+  return { outFront, outSide, size:{W,H} };
+}
+
+/* ======================
+   Pintura sobre costado
+   ====================== */
+function makePainter(canvas, baseImageData){
+  const ctx = canvas.getContext('2d');
+  const { width:W, height:H } = baseImageData;
+
+  // El canvas muestra base + strokes (usamos globalCompositeOperation='source-over')
+  canvas.width = W; canvas.height = H;
+  ctx.putImageData(baseImageData, 0,0);
+
+  // Capa de pintura separada (para poder limpiar sin tocar la base)
+  const paint = createCanvasLike(W,H);
+  const xp = paint.getContext('2d');
+  xp.lineCap = 'round'; xp.lineJoin = 'round';
+
+  // Render principal (base + pintura)
+  function render(){
+    ctx.putImageData(baseImageData, 0,0);
+    ctx.drawImage(paint, 0,0);
+  }
+
+  let drawing = false;
+  let brushColor = '#ffffff';
+  let brushSize  = 25;
+  function setBrush(col, size){
+    brushColor = col || brushColor;
+    brushSize  = size || brushSize;
+    xp.strokeStyle = brushColor;
+    xp.lineWidth   = brushSize;
+  }
+
+  canvas.addEventListener('pointerdown', (e)=>{
+    drawing = true;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX-rect.left) * (W/rect.width);
+    const y = (e.clientY-rect.top ) * (H/rect.height);
+    xp.beginPath(); xp.moveTo(x,y);
+  });
+  canvas.addEventListener('pointermove', (e)=>{
+    if(!drawing) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX-rect.left) * (W/rect.width);
+    const y = (e.clientY-rect.top ) * (H/rect.height);
+    xp.lineTo(x,y); xp.stroke(); render();
+  });
+  window.addEventListener('pointerup', ()=>{ drawing=false; });
+
+  function clearPaint(){ xp.clearRect(0,0,W,H); render(); }
+
+  // Eyedropper sobre la imagen (base + pintura)
+  function pickAt(clientX, clientY){
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((clientX-rect.left) * (W/rect.width));
+    const y = Math.floor((clientY-rect.top ) * (H/rect.height));
+    const id = ctx.getImageData(x,y,1,1).data;
+    const hex = '#'+[id[0],id[1],id[2]].map(v=>v.toString(16).padStart(2,'0')).join('');
+    return hex;
+  }
+
+  return { render, setBrush, clearPaint, pickAt, getPNG: ()=>canvas.toDataURL('image/png') };
+}
+
+/* ======================
+   Wiring UI
+   ====================== */
+const ui = {
+  inFront: document.getElementById('inFront'),
+  inSide:  document.getElementById('inSide'),
+  inBg:    document.getElementById('inBg'),
+  btnFlatten: document.getElementById('btnFlatten'),
+
+  cvFrontFlat: document.getElementById('cvFrontFlat'),
+  cvSideFlat:  document.getElementById('cvSideFlat'),
+  cvPaint:     document.getElementById('cvPaint'),
+
+  brushSize:  document.getElementById('brushSize'),
+  brushColor: document.getElementById('brushColor'),
+  pickColor:  document.getElementById('pickColor'),
+  useBgColor: document.getElementById('useBgColor'),
+  clearPaint: document.getElementById('clearPaint'),
+
+  dlFront: document.getElementById('dlFront'),
+  dlSide:  document.getElementById('dlSide'),
+};
+
+// Estado
+let imgFront=null, imgSide=null, imgBg=null;
+let painter=null; // controlador de pintura
+let outFrontPNG=null; // dataURL para descarga
+let outSidePaintedPNG=null;
+
+// Carga de imágenes
+ui.inFront.addEventListener('change', async (e)=>{ const f=e.target.files?.[0]; if(!f) return; imgFront=await fileToImage(f); });
+ui.inSide .addEventListener('change', async (e)=>{ const f=e.target.files?.[0]; if(!f) return; imgSide =await fileToImage(f); });
+ui.inBg   .addEventListener('change', async (e)=>{ const f=e.target.files?.[0]; if(!f) return; imgBg   =await fileToImage(f); });
+
+ui.btnFlatten.addEventListener('click', async ()=>{
+  if(!imgFront || !imgSide || !imgBg){ alert('Cargá las 3 fotos primero.'); return; }
+  setLoading(true);
+  try{
+    const { outFront, outSide, size:{W,H} } = await flattenWithBackground({imgFront,imgSide,imgBg});
+
+    // Mostrar en canvases
+    const xF = ui.cvFrontFlat.getContext('2d'); ui.cvFrontFlat.width=W; ui.cvFrontFlat.height=H;
+    const xS = ui.cvSideFlat .getContext('2d'); ui.cvSideFlat .width=W; ui.cvSideFlat .height=H;
+    xF.putImageData(outFront, 0,0);
+    xS.putImageData(outSide , 0,0);
+
+    // Preparar lienzo de pintura con la patilla aplanada
+    painter = makePainter(ui.cvPaint, outSide);
+    painter.render();
+
+    // Guardar PNG del frente aplanado (para descarga directa)
+    outFrontPNG = ui.cvFrontFlat.toDataURL('image/png');
+
+    // Config inicial pincel
+    painter.setBrush(ui.brushColor.value, parseInt(ui.brushSize.value,10));
+
+    // Cuentagotas (click único)
+    ui.pickColor.onclick = ()=>{
+      const once = (e)=>{
+        const col = painter.pickAt(e.clientX, e.clientY);
+        ui.brushColor.value = col;
+        painter.setBrush(col, parseInt(ui.brushSize.value,10));
+        ui.cvPaint.removeEventListener('click', once);
+      };
+      ui.cvPaint.addEventListener('click', once);
+
+    };
+
+    // Usar color promedio del fondo aplanado (tomado de la propia costado aplanada)
+    ui.useBgColor.onclick = ()=>{
+      const ctx = ui.cvSideFlat.getContext('2d');
+      const id  = ctx.getImageData(0,0,W,H).data;
+      let r=0,g=0,b=0, n=W*H;
+      for(let i=0;i<n;i++){ r+=id[4*i]; g+=id[4*i+1]; b+=id[4*i+2]; }
+      r=Math.round(r/n); g=Math.round(g/n); b=Math.round(b/n);
+      const hex = '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+      ui.brushColor.value = hex;
+      painter.setBrush(hex, parseInt(ui.brushSize.value,10));
+    };
+
+    // Grosor / color inputs
+    ui.brushSize.oninput = ()=> painter.setBrush(ui.brushColor.value, parseInt(ui.brushSize.value,10));
+    ui.brushColor.oninput= ()=> painter.setBrush(ui.brushColor.value, parseInt(ui.brushSize.value,10));
+
+    // Limpiar pintura
+    ui.clearPaint.onclick = ()=> painter.clearPaint();
+
+    
+    document.getElementById('goStep2').disabled = false;
+
+  } finally {
+    setLoading(false);
+  }
+});
+
+// Descargas
+ui.dlFront.onclick = ()=>{
+  if(!outFrontPNG){ alert('Generá primero la imagen aplanada.'); return; }
+  const a = document.createElement('a'); a.href = outFrontPNG; a.download = 'frente_aplanada.png'; a.click();
+};
+ui.dlSide.onclick = ()=>{
+  if(!painter){ alert('Generá primero la imagen aplanada.'); return; }
+  const png = painter.getPNG();
+  const a = document.createElement('a'); a.href = png; a.download = 'costado_aplanada_pintada.png'; a.click();
+};
+
+
+/* ========== Wizard controller ========== */
+let currentStep = 1;
+const steps = [...document.querySelectorAll('.step')];
+
+function showStep(n){
+  currentStep = n;
+  steps.forEach(s => s.classList.toggle('active', parseInt(s.dataset.step,10) === n));
+  const active = steps.find(s => s.classList.contains('active'));
+  if (active) active.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+document.addEventListener('click', (e)=>{
+  const nextBtn = e.target.closest('.js-next');
+  const prevBtn = e.target.closest('.js-prev');
+  if (nextBtn){
+    const to = parseInt(nextBtn.dataset.goto, 10);
+    if (!isNaN(to)) showStep(to);
+  }
+  if (prevBtn){
+    const to = parseInt(prevBtn.dataset.goto, 10);
+    if (!isNaN(to)) showStep(to);
+  }
+});
+showStep(1);
+
+</script>
+</body>
+</html>

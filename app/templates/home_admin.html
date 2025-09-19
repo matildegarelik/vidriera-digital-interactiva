@@ -10,6 +10,12 @@
     <h1>Bienvenido!</h1>
     <a href="/logout" class="btn btn-outline-primary" style="float:right">Logout</a>
     <a href="{{ url_for('main.agregar_lente') }}" class="btn btn-primary" style="float:right">Agregar</a>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="alert alert-info">{{ messages[0] }}</div>
+      {% endif %}
+    {% endwith %}
+
     <h3>Modelos de lentes</h3>
     <table class="table">
         <thead>
