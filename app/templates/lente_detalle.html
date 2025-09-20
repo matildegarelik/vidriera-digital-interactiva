@@ -283,7 +283,7 @@
           target="_blank"
           class="btn btn-info text-light btn-block"
           {% if sin_polar %}
-            onclick="return confirm('Aún no cargaste la información de polarizado. Es recomendable completarla y guardarla antes.\n\n¿Querés continuar igual?');"
+            onclick="return confirmarPolarizado(event,this)"
             title="Recomendado: cargar polarizado antes"
           {% endif %}
         >
@@ -351,9 +351,35 @@
   // Delete
   document.getElementById('btnDelete')?.addEventListener('click', async (e) => {
     e.preventDefault();
-    if (!confirm('¿Eliminar este modelo AR?')) return;
-    const resp = await fetch('{{ url_for("main.delete_lente", lente_id=ar_model.model_id) }}', { method: 'DELETE' });
-    if (resp.ok) window.location = '{{ url_for("main.home_admin") }}';
+    Swal.fire({
+      title: "¿Estás seguro?",
+      text: "Esta acción eliminará el modelo AR de forma permanente.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Sí, eliminar",
+      cancelButtonText: "Cancelar",
+      reverseButtons: true,
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        const resp = await fetch('{{ url_for("main.delete_lente", lente_id=ar_model.model_id) }}', { method: 'DELETE' });
+        if (resp.ok) {
+          Swal.fire({
+            title: "Eliminado",
+            text: "El modelo AR se eliminó correctamente.",
+            icon: "success",
+            timer: 1500,
+            showConfirmButton: false
+          });
+          setTimeout(() => {
+            window.location = '{{ url_for("main.home_admin") }}';
+          }, 1500);
+        } else {
+          Swal.fire("Error", "No se pudo eliminar el modelo.", "error");
+        }
+      }
+    });
   });
 </script>
 
@@ -392,6 +418,26 @@
     }
   });
 })();
+
+function confirmarPolarizado(e, el) {
+  e.preventDefault(); 
+
+  Swal.fire({
+    title: "¿Seguro?",
+    text: "Aún no cargaste la información de polarizado. Es recomendable completarla y guardarla antes.",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Sí, continuar",
+    cancelButtonText: "No, volver",
+    reverseButtons: true,
+  }).then((result) => {
+    if (result.isConfirmed) {
+      window.location.href = el.href;
+    }
+  });
+
+  return false;
+}
 </script>
 
 {% endblock %}

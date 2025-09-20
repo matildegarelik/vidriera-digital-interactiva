@@ -62,6 +62,13 @@ class Producto(db.Model):
         uselist=False,           # porque es 1:1
         backref="producto"
     )
+    model_ar = db.relationship(
+        "Model",
+        uselist=False,
+        primaryjoin="Producto.product_id == Model.product_id",
+        backref="producto",
+        lazy="joined",
+    )
 
     def __repr__(self):
         return f"<Producto {self.model} (${self.price})>"
@@ -107,3 +114,8 @@ class Model(db.Model):
     path_to_glb = db.Column(db.String(255), nullable=True)
 
     config_for_display = db.Column(JSON, nullable=True)
+
+    product = db.relationship(
+        "Producto",
+        backref=db.backref("ar_model", uselist=False)
+    )

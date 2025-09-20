@@ -21,22 +21,21 @@
     {% for categoria in categorias %}
     <div class="tab-pane fade show {% if loop.first %} active {% endif %}" id="tab{{categoria.category_id}}" role="tabpanel">
         <div class="tab-content px-5" id="tabsCategoriaContent">
-            {% for producto in categoria.productos %}
-            <div class="tab-pane fade show {% if loop.first %} active {% endif %}" id="subtab{{producto.product_id}}" role="tabpanel">
+            {% for modelo in categoria.modelos %}
+            <div class="tab-pane fade show {% if loop.first %} active {% endif %}" id="subtab{{modelo.product_id}}" role="tabpanel">
                 
                 <div class="producto">
                     <div class="imagen_producto">
                         <img id="imagen_principal"
-                          src="{{ url_for('static', filename=producto.image) if producto.image else url_for('static', filename='images/placeholder.svg') }}"
-                          alt="Imagen {{ producto.model }}">
+                          src="{{ '/'+modelo.path_to_img_front_flattened if modelo.path_to_img_front_flattened else url_for('static', filename='images/placeholder.svg') }}"
+                          alt="Imagen {{ modelo.name }}">
                     </div>
                     <div class = "bloque_flecha_descripcion">
                         
                         <div class="descripcion">
-                            <h2 id="nombre_prod">{{producto.model}}</h2>
-                            <h3 id="precio_prod">${{producto.price}}</h3>
-                            <p id="aclaracion_prod">{{producto.sku}}</p>
-                            <p id="descripcion_prod">{{producto.descripcion.name}}</p>
+                            <h2 id="nombre_prod">{{modelo.name}}</h2>
+                            <h3 id="precio_prod">${{modelo.product.price}}</h3>
+                            <p id="descripcion_prod">{{modelo.description}}</p>
                         </div>
                         
                     </div>
@@ -50,11 +49,11 @@
 
             <div class="tabsCategoria-wrapper">
                 <ul class="nav nav-tabs tabsCategoria py-3" role="tablist">
-                {% for producto in categoria.productos %}
+                {% for modelo in categoria.modelos %}
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link  {% if loop.first %} active {% endif %}" id="subtab{{producto.product_id}}-tab" data-bs-toggle="tab" data-bs-target="#subtab{{producto.product_id}}" type="button" role="tab">
-                      <img src="{{ url_for('static', filename=producto.image) if producto.image else url_for('static', filename='images/placeholder.svg') }}"
-                        class="card-img-top" style="height: 60px;" alt="Imagen {{ producto.model }}">
+                    <button class="nav-link  {% if loop.first %} active {% endif %}" id="subtab{{modelo.product_id}}-tab" data-bs-toggle="tab" data-bs-target="#subtab{{modelo.product_id}}" type="button" role="tab">
+                      <img src="{{ '/'+modelo.path_to_img_front_flattened if modelo.path_to_img_front_flattened else url_for('static', filename='images/placeholder.svg') }}"
+                        class="card-img-top" style="height: 60px;" alt="Imagen {{ modelo.name }}">
                     </button>
                 </li>
                 {% endfor %}
@@ -127,13 +126,13 @@
     const activeProdBtn = getActiveProductBtn();
     const prodIdx = Math.max(0, prodBtns.indexOf(activeProdBtn));
 
-    // Siguiente producto en la misma categoría, o pasar de categoría si termina
+    // Siguiente modelo en la misma categoría, o pasar de categoría si termina
     if (prodIdx < prodBtns.length - 1) {
       clickTab(prodBtns[prodIdx + 1]);
     } else {
       const nextCatIdx = (catIdx + 1) % catTabs.length;
       clickTab(catTabs[nextCatIdx]); // activa categoría
-      // activar primer producto de esa categoría
+      // activar primer modelo de esa categoría
       const nextPane = document.querySelector(catTabs[nextCatIdx].getAttribute('data-bs-target') || catTabs[nextCatIdx].dataset.bsTarget);
       const nextProdBtns = Array.from(nextPane.querySelectorAll('.tabsCategoria .nav-link'));
       if (nextProdBtns.length) clickTab(nextProdBtns[0]);
@@ -152,19 +151,19 @@
     btnRight.addEventListener('click', () => wrapper.scrollBy({ left:  200, behavior: 'smooth' }));
   }
 
-  // Centrar siempre que se muestre un subtab (producto) y resetear timer
+  // Centrar siempre que se muestre un subtab (modelo) y resetear timer
   document.addEventListener('shown.bs.tab', (ev) => {
     const btn = ev.target; // botón de tab activado
     if (btn.id && btn.id.startsWith('subtab') && btn.classList.contains('nav-link')) {
       centerInWrapper(btn);
       resetInactivityTimer();
     }
-    // Si se cambió la categoría, centrar el producto activo de esa categoría
+    // Si se cambió la categoría, centrar el modelo activo de esa categoría
     if (btn.id && btn.id.startsWith('tab') && btn.classList.contains('nav-link')) {
       const pane = document.querySelector(btn.getAttribute('data-bs-target') || btn.dataset.bsTarget);
       const prodActive = pane?.querySelector('.tabsCategoria .nav-link.active') || pane?.querySelector('.tabsCategoria .nav-link');
       if (prodActive) {
-        // asegurar que haya un producto activo y centrar
+        // asegurar que haya un modelo activo y centrar
         if (!prodActive.classList.contains('active')) clickTab(prodActive);
         centerInWrapper(prodActive);
         resetInactivityTimer();
@@ -208,7 +207,7 @@
     const idx = catBtns.indexOf(activeCatBtn);
     const nextIdx = (idx + 1) % catBtns.length;
 
-    clickTab(catBtns[nextIdx]); // tu handler shown.bs.tab activa/centra el primer producto
+    clickTab(catBtns[nextIdx]); // tu handler shown.bs.tab activa/centra el primer modelo
   }
 
   function movePrevCategory() {

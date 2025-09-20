@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, Response,jsonify,current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, Response,jsonify,current_app, send_from_directory
 from .models import Producto,Categoria,oc_product_to_category, ProductDescription,Usuario, Model
 from app import db, socketio
 from sqlalchemy import func
@@ -21,33 +21,58 @@ def index():
 
 @main.route('/catalogo')
 def catalogo():
-    #productos = Producto.query.all()
-    # Contar productos por categoría y ordenar descendente
+    # Categorías que tienen al menos un Model.visible == True
     categorias = (
-        Categoria.query
+        db.session.query(Categoria)
+        .join(oc_product_to_category, oc_product_to_category.c.category_id == Categoria.category_id)
+        .join(Producto, Producto.product_id == oc_product_to_category.c.product_id)
+        .join(Model, Model.product_id == Producto.product_id)
         .options(
-            joinedload(Categoria.productos).joinedload(Producto.descripcion)  # productos + descripción
+            # Pre-cargar productos -> descripcion y model_ar para evitar N+1
+            joinedload(Categoria.productos).joinedload(Producto.descripcion),
+            joinedload(Categoria.productos).joinedload(Producto.model_ar),
         )
-        .filter(Categoria.category_id.in_([107, 62, 106, 111]))
+        .filter(Model.visible.is_(True))
+        .distinct()
         .all()
     )
-    c =[]
-    for categoria in categorias:
-        # Tomar los primeros 10 productos de esta categoría
-        categoria.productos = categoria.productos[:10]
-        c.append(categoria)
-    return render_template('catalogo.html',categorias=categorias)
 
-@main.route("/control")
+    # Para cada categoría, quedarnos SOLO con sus modelos visibles (no productos)
+    for cat in categorias:
+        modelos_visibles = [
+            p.model_ar for p in cat.productos
+            if p.model_ar is not None and p.model_ar.visible
+        ]
+        # Limitar (antes limitabas a 10 productos, ahora a 10 modelos)
+        cat.modelos = modelos_visibles[:10]
+
+    return render_template('catalogo.html', categorias=categorias)
+
+
+@main.route('/control')
 def control():
-    categorias = Categoria.query.filter(Categoria.category_id.in_([107, 62, 106, 111])).all()
-    c =[]
-    for categoria in categorias:
-        # Tomar los primeros 10 productos de esta categoría
-        categoria.productos = categoria.productos[:10]
-        c.append(categoria)
-    return render_template("control.html",categorias=categorias)
+    categorias = (
+        db.session.query(Categoria)
+        .join(oc_product_to_category, oc_product_to_category.c.category_id == Categoria.category_id)
+        .join(Producto, Producto.product_id == oc_product_to_category.c.product_id)
+        .join(Model, Model.product_id == Producto.product_id)
+        .options(
+            joinedload(Categoria.productos).joinedload(Producto.descripcion),
+            joinedload(Categoria.productos).joinedload(Producto.model_ar),
+        )
+        .filter(Model.visible.is_(True))
+        .distinct()
+        .all()
+    )
 
+    for cat in categorias:
+        modelos_visibles = [
+            p.model_ar for p in cat.productos
+            if p.model_ar is not None and p.model_ar.visible
+        ]
+        cat.modelos = modelos_visibles[:10]
+
+    return render_template("control.html", categorias=categorias)
 
 @socketio.on("mover_producto")
 def handle_mover_producto(data):
@@ -107,7 +132,6 @@ def logout():
 
 @main.route('/uploads/<path:filename>')
 def uploads(filename):
-    from flask import send_from_directory
     return send_from_directory(current_app.config['UPLOAD_FOLDER'], filename)
 
 # ---------- Crear NUEVO ar_model ----------
