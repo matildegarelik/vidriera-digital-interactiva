@@ -220,7 +220,31 @@ function vectorizeFromFile(file, { mode='outline', ltres=1.0, pathomit=8, ncolor
     img.src = url;
   });
 }
+async function imageURLToCanvas(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      resolve(c);
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
 
+async function vectorizeFromURL(url, { mode='outline', ltres=1.0, pathomit=8, ncolors=2 } = {}) {
+  const canvas = await imageURLToCanvas(url);
+  const optsOutline = { ltres: parseFloat(ltres), pathomit: parseInt(pathomit), numberofcolors: 2, scale: 1 };
+  const optsFew     = { ltres: parseFloat(ltres), pathomit: parseInt(pathomit), numberofcolors: parseInt(ncolors), scale: 1 };
+  const opts        = (mode === 'fewcolors') ? optsFew : optsOutline;
+
+  const imgData = ImageTracer.getImgdata(canvas);
+  const svg = ImageTracer.imagedataToSVG(imgData, opts);
+  return { svg, canvas };
+}
 function applyPreviewStyle(svgText, { stroke = 'none', strokeWidth = 0, fill = '#ffffff', bg = '#000' } = {}) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(svgText, 'image/svg+xml');
@@ -301,8 +325,6 @@ function splitFrontByDualThresholdXOR(srcCanvas, {outerDelta=+20, innerDelta=-25
 
 }
 
-
-
 function downloadTextAs(name, text, mime='image/svg+xml') {
   const blob = new Blob([text], { type: mime });
   const a = document.createElement('a');
@@ -311,6 +333,49 @@ function downloadTextAs(name, text, mime='image/svg+xml') {
   a.click();
   URL.revokeObjectURL(a.href);
 }
+
+export async function autoloadFrontFromURL(frontURL, { outerDelta = 20, innerDelta = -25 } = {}) {
+  const srcCanvas = await imageURLToCanvas(frontURL);
+  const { frameSVG, glassSVG, binOuter, binInner, lensCanvas, marcoCanvas } =
+    splitFrontByDualThresholdXOR(srcCanvas, { outerDelta, innerDelta });
+
+  // Setear estado interno usado por el UI existente
+  front.frameText = frameSVG;
+  front.glassText = glassSVG;
+  front._marcoCanvas  = marcoCanvas;
+  front._lentesCanvas = lensCanvas;
+  front._srcCanvas = srcCanvas;
+
+  // Previews
+  const stroke = front.stroke?.value ?? '#ffffff';
+  const strokeWidth = parseFloat(front.strokeW?.value ?? '2');
+  const fill = front.fill?.value ?? 'none';
+  setPreviewHTML(front.framePreview, front.frameText, { stroke, strokeWidth, fill });
+  setPreviewHTML(front.glassPreview, front.glassText, { stroke, strokeWidth, fill });
+
+  return { frameSVG, glassSVG };
+}
+
+export async function autoloadTempleFromURL(templeURL, { mode='outline', ltres=1.0, pathomit=8, ncolors=2 } = {}) {
+  const { svg } = await vectorizeFromURL(templeURL, { mode, ltres, pathomit, ncolors });
+  side.text = svg;
+
+  const stroke = side.stroke?.value ?? '#ffffff';
+  const strokeWidth = parseFloat(side.strokeW?.value ?? '2');
+  const fill = side.fill?.value ?? 'none';
+  if (side.preview) setPreviewHTML(side.preview, side.text, { stroke, strokeWidth, fill });
+
+  return { templeSVG: svg };
+}
+
+export function collectSVGPayload() {
+  return {
+    frame_svg: front.frameText || '',
+    glass_svg: front.glassText || '',
+    temple_svg: side.text || ''
+  };
+}
+
 
 // ---------- UI FOTO→SVG ----------
 export const front = {

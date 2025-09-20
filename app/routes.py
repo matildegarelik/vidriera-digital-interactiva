@@ -7,7 +7,7 @@ from flask_socketio import emit
 import qrcode,io
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
-import os, random, shutil,tempfile,json,uuid
+import os, random, shutil,tempfile,json,uuid, base64
 from .utils import caracterizar_lente_reducida, _save_upload, norm, _maybe_replace,_safe_delete
 import numpy as np
 import cv2 as cv
@@ -255,13 +255,99 @@ def delete_lente(lente_id):
     return {'success': True}
 
 
-@main.route("/_admin_helpers/aplanar_imagenes",methods=['GET'])
-def aplanar_imagenes():
-    return render_template('helpers_admin/index_previo.html')
+@main.route("/_admin_helpers/aplanar_imagenes/<int:model_id>",methods=['GET','POST'])
+def aplanar_imagenes(model_id):
+    m = Model.query.get_or_404(model_id)
 
-@main.route("/_admin_helpers/imgs_to_svg",methods=['GET'])
-def imgs_to_svg():
-    return render_template('helpers_admin/index0.html')
+    if request.method == 'POST':
+        root = current_app.config['UPLOAD_FOLDER']
+
+        def _save_dataurl(dataurl, subdir, fname):
+            if not dataurl:
+                return None
+            # dataurl -> bytes
+            head, b64 = dataurl.split(',', 1)
+            ext = '.png'
+            outdir = Path(root) / subdir
+            outdir.mkdir(parents=True, exist_ok=True)
+            final_name = f"{fname}_{uuid.uuid4().hex[:8]}{ext}"
+            outpath = outdir / final_name
+            with open(outpath, 'wb') as f:
+                f.write(base64.b64decode(b64))
+            # devolver ruta relativa para guardar en DB
+            return "/uploads/" + (Path(subdir) / final_name).as_posix()
+
+        payload = request.get_json(silent=True) or {}
+        # cada campo es un dataURL (opcional)
+        f_front  = _save_dataurl(payload.get("front_flattened"),  "imgs/flattened/front",  f"front_{model_id}")
+        f_side   = _save_dataurl(payload.get("side_flattened"),   "imgs/flattened/side",   f"side_{model_id}")
+        f_temple = _save_dataurl(payload.get("temple_flattened"), "imgs/flattened/temple", f"temple_{model_id}")
+        f_bg     = _save_dataurl(payload.get("bg_flattened"),     "imgs/flattened/bg",     f"bg_{model_id}")
+
+        if f_front:  m.path_to_img_front_flattened  = f_front
+        if f_side:   m.path_to_img_side_flattened   = f_side
+        if f_temple: m.path_to_img_temple_flattened = f_temple
+        if f_bg:     m.path_to_img_bg_flattened     = f_bg
+
+        db.session.commit()
+        return jsonify({
+            "ok": True,
+            "redirect": url_for('main.lente_detalle', lente_id=model_id)
+        })
+
+
+    front_img_url  = url_for('main.uploads', filename=norm(m.path_to_img_front))  if m.path_to_img_front  else ''
+    side_img_url = url_for('main.uploads', filename=norm(m.path_to_img_side)) if m.path_to_img_side else ''
+    bg_img_url = url_for('main.uploads', filename=norm(m.path_to_img_bg)) if m.path_to_img_bg else ''
+
+    return render_template('helpers_admin/index_previo.html', front_img_url=front_img_url, 
+                           side_img_url=side_img_url,bg_img_url=bg_img_url, model_id=model_id)
+
+@main.route("/_admin_helpers/imgs_to_svg/<int:model_id>", methods=['GET', 'POST'])
+def imgs_to_svg(model_id):
+    m = Model.query.get_or_404(model_id)
+
+    if request.method == 'POST':
+        root = current_app.config['UPLOAD_FOLDER']
+
+        def _save_fs(file_storage, subdir, fname, ext_default):
+            if not file_storage:
+                return None
+            outdir = Path(root) / subdir
+            outdir.mkdir(parents=True, exist_ok=True)
+            original = secure_filename(file_storage.filename or f"{fname}{ext_default}")
+            stem, ext = os.path.splitext(original)
+            final_name = f"{stem}_{uuid.uuid4().hex[:8]}{ext or ext_default}"
+            outpath = outdir / final_name
+            file_storage.save(outpath)
+            # guardar como URL pública consistente
+            return "/uploads/" + (Path(subdir) / final_name).as_posix()
+
+        # Espera 1..3 archivos (opcionales) desde el frontend
+        f_frame   = _save_fs(request.files.get('svg_frame'),   "svgs/frame",   f"frame_{model_id}",   ".svg")
+        f_glasses = _save_fs(request.files.get('svg_glasses'), "svgs/glasses", f"glasses_{model_id}", ".svg")
+        f_temple  = _save_fs(request.files.get('svg_temple'),  "svgs/temple",  f"temple_{model_id}",  ".svg")
+
+        if f_frame:   m.path_to_svg_frame   = f_frame
+        if f_glasses: m.path_to_svg_glasses = f_glasses
+        if f_temple:  m.path_to_svg_temple  = f_temple
+
+        db.session.commit()
+        return jsonify({
+            "ok": True,
+            "redirect": url_for('main.lente_detalle', lente_id=model_id)
+        })
+
+    # GET: pre-cargar las flattened si existen
+    front_img_url  = url_for('main.uploads', filename=norm(m.path_to_img_front_flattened))  if m.path_to_img_front_flattened  else ''
+    temple_img_url = url_for('main.uploads', filename=norm(m.path_to_img_temple_flattened)) if m.path_to_img_temple_flattened else ''
+
+    return render_template(
+        'helpers_admin/index0.html',
+        model_id=model_id,
+        front_img_url=front_img_url,
+        temple_img_url=temple_img_url
+    )
 
 
 @main.route("/_admin_helpers/svgs_to_glb/<int:model_id>", methods=['GET', 'POST'])
@@ -298,7 +384,6 @@ def svgs_to_glb(model_id):
     front_img_url  = url_for('main.uploads', filename=norm(m.path_to_img_front_flattened))  if m.path_to_img_front_flattened  else ''
     temple_img_url = url_for('main.uploads', filename=norm(m.path_to_img_temple_flattened)) if m.path_to_img_temple_flattened else ''
 
-
     pol_info = m.polarization_info or '{}'
 
     return render_template('helpers_admin/index1.html', front_img_url=front_img_url, temple_img_url=temple_img_url, 
@@ -315,5 +400,8 @@ def api_polarizar(model_id):
     front_img_url  = url_for('main.uploads', filename=norm(m.path_to_img_front_flattened))  if m.path_to_img_front_flattened  else ''
     bg_img_url  = url_for('main.uploads', filename=norm(m.path_to_img_bg_flattened))  if m.path_to_img_bg_flattened  else None
     res = caracterizar_lente_reducida(front_img_url[1:], bg_img_url[1:])
+    m.polarization_info= res
+    db.session.commit()
+
     return jsonify(res)
 

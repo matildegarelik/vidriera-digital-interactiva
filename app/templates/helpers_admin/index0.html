@@ -111,6 +111,14 @@
       </div>
       <div id="sidePreview" class="preview" style="margin-top:8px"></div>
     </div>
+
+    <h3>3) Guardar</h3>
+    <div class="grp">
+      <div class="row">
+        <button id="btnSaveSvgs" class="primary">Guardar en modelo</button>
+        <span id="saveStatus0" class="hint"></span>
+      </div>
+    </div>
   </aside>
 
   <main>
@@ -132,16 +140,43 @@
   </main>
 </div>
 
+<script>
+  const MODEL_ID = {{ model_id|tojson }};
+  const PRELOADED = {
+    front: {{ front_img_url|default('')|tojson }},
+    temple: {{ temple_img_url|default('')|tojson }}
+  };
+
+  async function urlToImage(src){
+  return new Promise((res, rej)=>{
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = ()=>res(img);
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+// Si hay PRELOADED.* usalos directo:
+(async ()=>{
+  try{
+    if (PRELOADED.front)  frontImg  = await urlToImage(PRELOADED.front);
+    if (PRELOADED.temple) templeImg = await urlToImage(PRELOADED.temple);
+    // refrescá previews si corresponde…
+  }catch(e){}
+})();
+
+</script>
+
+
 <!-- Módulos compartidos -->
 <script type="module" src="{{ url_for('static', filename='js/helpers_morph.js') }}"></script>
 <script type="module" src="{{ url_for('static', filename='js/helpers_svg.js') }}"></script>
 
 <!-- Script local -->
 <script type="module">
-import { front } from "{{ url_for('static', filename='js/helpers_svg.js') }}";
+import { front, autoloadFrontFromURL, autoloadTempleFromURL, collectSVGPayload, setLoading } from "{{ url_for('static', filename='js/helpers_svg.js') }}";
 import { toGray, otsu, thresh, andWithComplementB, fillTwoBiggestAndClose } from "{{ url_for('static', filename='js/helpers_morph.js') }}";
-
-
 
   const cvOuter = document.getElementById('maskOuter');
   const cvInner = document.getElementById('maskInner');
@@ -149,10 +184,38 @@ import { toGray, otsu, thresh, andWithComplementB, fillTwoBiggestAndClose } from
 
   let lastProcessed = null; // guardamos el canvas procesado para exportar
 
+  async function runAutoloadIfAny(){
+    setLoading(true)
+    // ocultar inputs si viene preload
+    if (PRELOADED.front) {
+      try {
+        await autoloadFrontFromURL(PRELOADED.front, {
+          outerDelta: parseInt(document.getElementById('thrOuterDelta').value,10),
+          innerDelta: parseInt(document.getElementById('thrInnerDelta').value,10)
+        });
+        // oculto la carga de frente para no confundir
+        document.getElementById('frontPhoto').style.display = 'none';
+      } catch(e){ console.error('autoload front', e); }
+    }
+
+    if (PRELOADED.temple) {
+      try {
+        await autoloadTempleFromURL(PRELOADED.temple, {
+          mode:'outline', ltres:1.0, pathomit:10, ncolors:2
+        });
+        // oculto la carga de lateral
+        document.getElementById('sidePhoto').style.display = 'none';
+      } catch(e){ console.error('autoload temple', e); }
+    }
+    setLoading(false)
+  }
+  runAutoloadIfAny();
+
+
   document.getElementById('btnMasks').onclick = ()=>{
-    const tex = front?.tex; 
-    if(!tex?.image){ alert('Primero generá el frente.'); return; }
-    const src = tex.image;
+    const src = front?._srcCanvas || front?.tex?.image;
+    if(!src){ alert('Primero generá el frente.'); return; }
+
     const od = parseInt(document.getElementById('thrOuterDelta').value);
     const id = parseInt(document.getElementById('thrInnerDelta').value);
 
@@ -176,6 +239,36 @@ import { toGray, otsu, thresh, andWithComplementB, fillTwoBiggestAndClose } from
 
     lastProcessed = filled;
   };
+  const saveBtn     = document.getElementById('btnSaveSvgs');
+  const saveStatus0 = document.getElementById('saveStatus0');
+
+  saveBtn?.addEventListener('click', async ()=>{
+    const payload = collectSVGPayload(); // { frame_svg, glass_svg, temple_svg }
+
+    if (!payload.frame_svg && !payload.glass_svg && !payload.temple_svg) {
+      alert('Generá o cargá los SVG primero.');
+      return;
+    }
+    saveStatus0.textContent = 'Guardando…';
+
+    try{
+      const r = await fetch(`/_admin_helpers/imgs_to_svg/${MODEL_ID}`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+      if (j.ok && j.redirect){
+        window.location = j.redirect; // al detalle
+      } else {
+        saveStatus0.textContent = 'Error al guardar';
+      }
+    }catch(err){
+      console.error(err);
+      saveStatus0.textContent = 'Error al guardar';
+    }
+  });
+
  
 </script>
 </body>
