@@ -8,7 +8,7 @@ import qrcode,io
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 import os, random, shutil,tempfile,json,uuid, base64
-from .utils import caracterizar_lente_reducida, _save_upload, norm, _maybe_replace,_safe_delete
+from .utils import caracterizar_lente_reducida, norm, _maybe_replace,_load_model_image_or_upload,_front_segmentation_vb,_temple_segmentation_vb
 import numpy as np
 import cv2 as cv
 from pathlib import Path
@@ -405,3 +405,78 @@ def api_polarizar(model_id):
 
     return jsonify(res)
 
+@main.route("/_admin_helpers/api/seg_b/front", methods=['POST'])
+def api_seg_b_front():
+    """
+    Genera máscaras (gray/edges/sil/inner) y SVG (marco/lentes) del frente.
+    Parámetros (form-data):
+      - close_r (int)
+      - min_area (int)
+      - image (File) opcional para reemplazar la precargada
+    """
+    close_r  = request.form.get('close_r', default=10, type=int)
+    min_area = request.form.get('min_area', default=1200, type=int)
+    upload_fs = request.files.get('image')
+    model_id = request.form.get('model_id')
+
+    m = Model.query.get(model_id)
+    img = _load_model_image_or_upload(
+        m,
+        'path_to_img_front_flattened',
+        upload_fs,
+        fallbacks=('path_to_img_front',)
+    )
+    if img is None:
+        return jsonify({"ok": False, "error": "no_image"}), 400
+
+    try:
+        out = _front_segmentation_vb(img, close_r=close_r, min_area=min_area)
+        return jsonify({
+            "ok": True,
+            "masks": {
+                "gray":  out["gray"],
+                "edges": out["edges"],
+                "sil":   out["sil"],
+                "inner": out["inner"],
+            },
+            "svgs": {
+                "frame":  out["svg_frame"],
+                "lenses": out["svg_lenses"],
+            }
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": "proc_error", "detail": str(e)}), 500
+
+@main.route("/_admin_helpers/api/seg_b/temple/", methods=['POST'])
+def api_seg_b_temple():
+    """
+    Genera máscara y SVG de la patilla (lateral).
+    Parámetros (form-data):
+      - close_r (int)
+      - min_area (int)
+      - image (File) opcional para reemplazar la precargada
+    """
+    close_r  = request.form.get('close_r', default=7, type=int)
+    min_area = request.form.get('min_area', default=800, type=int)
+    upload_fs = request.files.get('image')
+    model_id = request.form.get('model_id')
+
+    m = Model.query.get(model_id)
+    img = _load_model_image_or_upload(
+        m,
+        'path_to_img_temple_flattened',
+        upload_fs,
+        fallbacks=('path_to_img_side_flattened', 'path_to_img_side')
+    )
+    if img is None:
+        return jsonify({"ok": False, "error": "no_image"}), 400
+
+    try:
+        out = _temple_segmentation_vb(img, close_r=close_r, min_area=min_area)
+        return jsonify({
+            "ok": True,
+            "masks": { "binary": out["mask_png"] },
+            "svgs":  { "temple": out["svg"] }
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": "proc_error", "detail": str(e)}), 500

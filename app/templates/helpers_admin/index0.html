@@ -1,21 +1,23 @@
+<!-- helpers_admin/index0_b.html -->
 <!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>index0 – Generar SVGs (frente/lateral) con umbrales y máscaras</title>
+  <title>index0_b – SVG por servidor (máscaras & contornos)</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/panel_admin.css') }}">
 
-  <!-- Import map para three -->
-  <script type="importmap">
-  { "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-  }}
-  </script>
-  <!-- ImageTracer -->
-  <script src="https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.min.js"></script>
+  <style>
+    .grid { display:grid; grid-template-columns: 360px 1fr; gap:12px; }
+    .row  { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    aside .previewBox { background:#0f0f0f; border:1px solid #222; border-radius:8px; min-height:220px; display:grid; place-items:center; overflow:hidden; }
+    aside .previewBox > * { max-width:100%; max-height:260px; width:auto; height:auto; display:block; }
+    .mask { background:#0f0f0f; border:1px solid #222; border-radius:8px; overflow:hidden; min-height:220px; display:grid; place-items:center; }
+    .mask img { width:100%; height:auto; display:block; }
+    iframe.svgPrev { width:100%; height:260px; border:0; }
+  </style>
 </head>
 <body>
+<!-- Loader -->
 <div id="loader"><div class="loader">
   <div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div>
   <span style="color:#fff">Procesando…</span>
@@ -23,118 +25,93 @@
 
 <div class="grid">
   <aside>
-    <h3>1) Frente (aro/puente) </h3>
+    <h3>1) Frente (aro/puente)</h3>
     <div class="grp">
-      <label>Foto frontal (o SVG)</label>
-      <input id="frontPhoto" type="file" accept="image/*,.svg" />
-
-      <input type="hidden" id="frontMode" value="outline">
-      <input type="hidden" id="frontLtres" value="1.0" />
-      <input id="frontPathomit" type="hidden" value="10" />
-      <input id="frontNcolors" type="hidden" value="2" />
-
-      <!--<div class="row">
-        <div>
-          <label>Modo vectorizado</label>
-          <select id="frontMode">
-            <option value="outline">Contorno</option>
-            <option value="fewcolors">Pocos colores</option>
-          </select>
+      <div id="frontUploadRow">
+        <label>Foto frontal (opcional para reemplazar la precargada)</label>
+        <input id="frontFile" type="file" accept="image/*" />
+      </div>
+      <div class="row">
+        <div style="flex:1">
+          <label>Cierre (radio)</label>
+          <input id="closeR" type="range" min="2" max="40" step="1" value="10" />
         </div>
-        <div>
-          <label>ltres</label>
-          <input id="frontLtres" type="range" min="0.5" max="5" step="0.1" value="1.0" />
+        <div style="flex:1">
+          <label>Mín área</label>
+          <input id="minArea" type="range" min="200" max="8000" step="100" value="1200" />
         </div>
+      </div>
+      <div class="row">
+        <button id="btnFrontUpdate">Actualizar máscaras (servidor)</button>
       </div>
 
       <div class="row">
-        <div>
-          <label>pathomit</label>
-          <input id="frontPathomit" type="range" min="0" max="80" step="1" value="10" />
-        </div>
-        <div>
-          <label>ncolors</label>
-          <input id="frontNcolors" type="range" min="2" max="6" step="1" value="2" />
-        </div>
-      </div> -->
-
-      <div class="row">
-        <div>
-          <label>Outer Δ (↑ más sólido)</label>
-          <input id="thrOuterDelta" type="range" min="-60" max="+60" step="1" value="20" />
-        </div>
-        <div>
-          <label>Inner Δ (↓ más detalle)</label>
-          <input id="thrInnerDelta" type="range" min="-200" max="0" step="1" value="-80" />
-        </div>
+        <button id="btnDownloadFrame" class="secondary">Descargar SVG (marco)</button>
+        <button id="btnDownloadGlass" class="secondary">Descargar SVG (lentes)</button>
       </div>
 
-      <div class="row">
-        <div>
-          <label>Radio closing</label>
-          <input id="closingRadius" type="range" min="20" max="100" step="2" value="65" />
-        </div>
-        <div>
-          <label><input type="checkbox" id="chkFillHoles" checked /> Rellenar huecos</label>
-        </div>
-      </div>
-
-      <div class="row">
-        <button id="frontToSVG">Generar SVG</button>
-        <button id="btnMasks" class="secondary" title="Ver máscaras intermedias">Actualizar</button>
-      </div>
-
-      <div class="row">
-        <button id="frontDownloadFrame" class="secondary">Descargar SVG (marco)</button>
-      </div>
-      <div class="row">
-        <button id="frontDownloadGlass" class="secondary">Descargar SVG (lentes)</button>
-      </div>
-
-      <div class="row">
-        <div>
-          <h4>Marco</h4>
-          <div id="frontFramePreview" class="preview"></div>
-        </div>
-      </div>
+      <h4>Marco</h4>
+      <div id="framePreview" class="previewBox"></div>
       <h4>Lentes</h4>
-      <div id="frontGlassPreview" class="preview"></div>
+      <div id="glassPreview" class="previewBox"></div>
     </div>
 
     <h3>2) Lateral (patilla)</h3>
     <div class="grp">
-      <label>Foto lateral (o SVG)</label>
-      <input id="sidePhoto" type="file" accept="image/*,.svg" />
-      <div class="row">
-        <button id="sideToSVG">Generar patilla (SVG)</button>
-        <button id="sideDownload" class="secondary">Descargar SVG (patilla)</button>
+      <div id="sideUploadRow">
+        <label>Foto lateral (opcional para reemplazar la precargada)</label>
+        <input id="sideFile" type="file" accept="image/*" />
       </div>
-      <div id="sidePreview" class="preview" style="margin-top:8px"></div>
+      <div class="row">
+        <div style="flex:1">
+          <label>Cierre (radio)</label>
+          <input id="closeRSide" type="range" min="2" max="40" step="1" value="8" />
+        </div>
+        <div style="flex:1">
+          <label>Mín área</label>
+          <input id="minAreaSide" type="range" min="200" max="8000" step="100" value="900" />
+        </div>
+      </div>
+      <div class="row">
+        <button id="btnSideUpdate">Actualizar patilla (servidor)</button>
+        <button id="btnDownloadTemple" class="secondary">Descargar SVG (patilla)</button>
+      </div>
+      <div id="templePreview" class="previewBox"></div>
     </div>
 
-    <h3>3) Guardar</h3>
-    <div class="grp">
-      <div class="row">
-        <button id="btnSaveSvgs" class="primary">Guardar en modelo</button>
-        <span id="saveStatus0" class="hint"></span>
-      </div>
+    <div class="row">
+      <form id="formSave" method="post" action="/_admin_helpers/imgs_to_svg/{{model_id}}">
+        <input type="hidden" name="model_id" value="{{ model_id }}">
+        <!-- estos hidden no se usan, se guarda con fetch como archivos reales -->
+        <input type="hidden" name="svg_frame"  id="svgFrameField">
+        <input type="hidden" name="svg_glass"  id="svgGlassField">
+        <input type="hidden" name="svg_temple" id="svgTempleField">
+        <button class="primary">Guardar en modelo</button>
+      </form>
+      <span id="saveMsg" class="hint"></span>
     </div>
   </aside>
 
   <main>
-    <h3>Máscaras </h3>
+    <h3>Máscaras (servidor)</h3>
     <div class="row">
-      <div class="col-md">
-        <h4>Outer (umbral alto)</h4>
-        <div class="mask"><canvas id="maskOuter"></canvas></div>
+      <div class="col-md" style="flex:1">
+        <h4>Gray</h4>
+        <div class="mask"><img id="mGray" alt=""></div>
       </div>
-      <div class="col-md">
-        <h4>Inner (umbral bajo)</h4>
-        <div class="mask"><canvas id="maskInner"></canvas></div>
+      <div class="col-md" style="flex:1">
+        <h4>Edges</h4>
+        <div class="mask"><img id="mEdges" alt=""></div>
       </div>
-      <div class="col-md">
-        <h4 style="margin-top:8px">Resultado procesado</h4>
-        <div class="mask"><canvas id="maskXor"></canvas></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="col-md" style="flex:1">
+        <h4>Silueta</h4>
+        <div class="mask"><img id="mSil" alt=""></div>
+      </div>
+      <div class="col-md" style="flex:1">
+        <h4>Interior (vidrios)</h4>
+        <div class="mask"><img id="mInner" alt=""></div>
       </div>
     </div>
   </main>
@@ -143,133 +120,11 @@
 <script>
   const MODEL_ID = {{ model_id|tojson }};
   const PRELOADED = {
-    front: {{ front_img_url|default('')|tojson }},
+    front:  {{ front_img_url|default('')|tojson }},
     temple: {{ temple_img_url|default('')|tojson }}
   };
-
-  async function urlToImage(src){
-  return new Promise((res, rej)=>{
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = ()=>res(img);
-    img.onerror = rej;
-    img.src = src;
-  });
-}
-
-// Si hay PRELOADED.* usalos directo:
-(async ()=>{
-  try{
-    if (PRELOADED.front)  frontImg  = await urlToImage(PRELOADED.front);
-    if (PRELOADED.temple) templeImg = await urlToImage(PRELOADED.temple);
-    // refrescá previews si corresponde…
-  }catch(e){}
-})();
-
 </script>
 
-
-<!-- Módulos compartidos -->
-<script type="module" src="{{ url_for('static', filename='js/helpers_morph.js') }}"></script>
 <script type="module" src="{{ url_for('static', filename='js/helpers_svg.js') }}"></script>
-
-<!-- Script local -->
-<script type="module">
-import { front, autoloadFrontFromURL, autoloadTempleFromURL, collectSVGPayload, setLoading } from "{{ url_for('static', filename='js/helpers_svg.js') }}";
-import { toGray, otsu, thresh, andWithComplementB, fillTwoBiggestAndClose } from "{{ url_for('static', filename='js/helpers_morph.js') }}";
-
-  const cvOuter = document.getElementById('maskOuter');
-  const cvInner = document.getElementById('maskInner');
-  const cvXor   = document.getElementById('maskXor');
-
-  let lastProcessed = null; // guardamos el canvas procesado para exportar
-
-  async function runAutoloadIfAny(){
-    setLoading(true)
-    // ocultar inputs si viene preload
-    if (PRELOADED.front) {
-      try {
-        await autoloadFrontFromURL(PRELOADED.front, {
-          outerDelta: parseInt(document.getElementById('thrOuterDelta').value,10),
-          innerDelta: parseInt(document.getElementById('thrInnerDelta').value,10)
-        });
-        // oculto la carga de frente para no confundir
-        document.getElementById('frontPhoto').style.display = 'none';
-      } catch(e){ console.error('autoload front', e); }
-    }
-
-    if (PRELOADED.temple) {
-      try {
-        await autoloadTempleFromURL(PRELOADED.temple, {
-          mode:'outline', ltres:1.0, pathomit:10, ncolors:2
-        });
-        // oculto la carga de lateral
-        document.getElementById('sidePhoto').style.display = 'none';
-      } catch(e){ console.error('autoload temple', e); }
-    }
-    setLoading(false)
-  }
-  runAutoloadIfAny();
-
-
-  document.getElementById('btnMasks').onclick = ()=>{
-    const src = front?._srcCanvas || front?.tex?.image;
-    if(!src){ alert('Primero generá el frente.'); return; }
-
-    const od = parseInt(document.getElementById('thrOuterDelta').value);
-    const id = parseInt(document.getElementById('thrInnerDelta').value);
-
-    const gray = toGray(src);
-    const t = otsu(gray), 
-          tOuter=Math.max(0,Math.min(255,t+od)), 
-          tInner=Math.max(0,Math.min(255,t+id));
-    const outer = thresh(gray,tOuter);
-    const inner = thresh(gray,tInner);
-
-    const xor = andWithComplementB(inner, outer);
-
-    const radius = parseInt(document.getElementById('closingRadius').value);
-    const doFill = document.getElementById('chkFillHoles').checked;
-    const filled = fillTwoBiggestAndClose(xor, radius, doFill);
-
-    [cvOuter,cvInner,cvXor].forEach(c=>{ c.width=src.width; c.height=src.height; });
-    cvOuter.getContext('2d').drawImage(outer,0,0);
-    cvInner.getContext('2d').drawImage(inner,0,0);
-    cvXor.getContext('2d').drawImage(filled,0,0);
-
-    lastProcessed = filled;
-  };
-  const saveBtn     = document.getElementById('btnSaveSvgs');
-  const saveStatus0 = document.getElementById('saveStatus0');
-
-  saveBtn?.addEventListener('click', async ()=>{
-    const payload = collectSVGPayload(); // { frame_svg, glass_svg, temple_svg }
-
-    if (!payload.frame_svg && !payload.glass_svg && !payload.temple_svg) {
-      alert('Generá o cargá los SVG primero.');
-      return;
-    }
-    saveStatus0.textContent = 'Guardando…';
-
-    try{
-      const r = await fetch(`/_admin_helpers/imgs_to_svg/${MODEL_ID}`, {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const j = await r.json();
-      if (j.ok && j.redirect){
-        window.location = j.redirect; // al detalle
-      } else {
-        saveStatus0.textContent = 'Error al guardar';
-      }
-    }catch(err){
-      console.error(err);
-      saveStatus0.textContent = 'Error al guardar';
-    }
-  });
-
- 
-</script>
 </body>
 </html>

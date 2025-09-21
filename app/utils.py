@@ -1,9 +1,10 @@
 from werkzeug.utils import secure_filename
-import os,uuid
+import os,uuid,base64
 import numpy as np
 import cv2 as cv
 from pathlib import Path
 from flask import current_app
+from .models import Model
 
 # --- Otros helpers ---
 
@@ -275,3 +276,234 @@ def caracterizar_lente_reducida(path_lente, path_fondo):
         "alpha_rows": alpha_rows.tolist()
     }
 
+
+# =========================
+# === Segmentación vB  ===
+# =========================
+# Endpoints usados por index0_b.html para generar máscaras y SVGs en servidor,
+# a partir de una imagen precargada del modelo o de un archivo subido (campo "image").
+
+import numpy as np
+import cv2 as cv
+from pathlib import Path
+
+def _imdecode_filestorage(fs):
+    """Lee un FileStorage (input name='image') a np.uint8 BGR. None si no hay archivo."""
+    if not fs or not getattr(fs, "filename", None):
+        return None
+    file_bytes = np.frombuffer(fs.read(), np.uint8)
+    # IMPORTANTE: no hacer lecturas posteriores, así que no hace falta fs.seek(0)
+    img = cv.imdecode(file_bytes, cv.IMREAD_COLOR)
+    return img
+
+def _imread_uploads_rel(rel_path):
+    """Lee imagen desde UPLOAD_FOLDER/rel_path (o '/uploads/...') en BGR."""
+    if not rel_path:
+        return None
+    # Aceptamos rutas que ya vengan con prefijo '/uploads/'
+    if rel_path.startswith('/uploads/'):
+        rel = rel_path[len('/uploads/'):]
+    else:
+        rel = rel_path
+    root = current_app.config.get('UPLOAD_FOLDER', '')
+    p = Path(root) / rel
+    if not p.exists():
+        return None
+    return cv.imread(str(p), cv.IMREAD_COLOR)
+
+def _load_model_image_or_upload(model_obj: Model | None,
+                                primary_attr: str,
+                                upload_fs,
+                                fallbacks: tuple[str, ...] = ()):
+    """
+    Prioridad:
+      1) archivo subido (campo 'image')
+      2) model.<primary_attr>
+      3) primeros atributos válidos en 'fallbacks'
+    Devuelve BGR np.uint8 o None.
+    """
+    img = _imdecode_filestorage(upload_fs)
+    if img is not None:
+        return img
+    if model_obj is not None:
+        # primary
+        p = getattr(model_obj, primary_attr, None)
+        if p:
+            img = _imread_uploads_rel(p)
+            if img is not None:
+                return img
+        # fallbacks
+        for attr in fallbacks:
+            p = getattr(model_obj, attr, None)
+            if p:
+                img = _imread_uploads_rel(p)
+                if img is not None:
+                    return img
+    return None
+
+def _b64_png_dataurl(img):  # BGR o GRAY
+    if img is None:
+        return None
+    if img.ndim == 2:
+        out = img
+    else:
+        out = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+    ok, buf = cv.imencode('.png', out)
+    if not ok:
+        return None
+    return "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode('ascii')
+
+def _mask_to_svg(mask_bin, fill="#000000"):
+    """
+    Convierte una máscara binaria (0/255) a un único <path> SVG con fill-rule="evenodd".
+    Contornos externos + huecos.
+    """
+    h, w = mask_bin.shape[:2]
+    # Asegurar 0/255
+    m = (mask_bin > 0).astype(np.uint8) * 255
+
+    # Contornos externos e internos
+    contours, hierarchy = cv.findContours(m, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE)
+    if hierarchy is None:
+        # SVG vacío válido
+        return f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}"></svg>'
+
+    # Armamos un único path (evenodd) con todos los contornos
+    d_parts = []
+    for c in contours:
+        if len(c) < 3:
+            continue
+        c = c.squeeze(1)  # Nx2
+        xs = c[:, 0].tolist()
+        ys = c[:, 1].tolist()
+        d = f'M{xs[0]} {ys[0]} ' + ' '.join([f'L{xs[i]} {ys[i]}' for i in range(1, len(xs))]) + ' Z'
+        d_parts.append(d)
+
+    d_all = ' '.join(d_parts)
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+        f'<path d="{d_all}" fill="{fill}" fill-rule="evenodd" stroke="none"/></svg>'
+    )
+    return svg
+
+def _keep_two_largest_components(mask_bin):
+    """Devuelve una máscara con sólo las dos componentes más grandes."""
+    num, lbl, stats, _ = cv.connectedComponentsWithStats((mask_bin > 0).astype(np.uint8), 8, cv.CV_32S)
+    if num <= 1:
+        return np.zeros_like(mask_bin)
+    # stats[0] = background
+    areas = [(i, stats[i, cv.CC_STAT_AREA]) for i in range(1, num)]
+    areas.sort(key=lambda x: x[1], reverse=True)
+    keep = {i for i, _ in areas[:2]}
+    out = np.zeros_like(mask_bin)
+    out[np.isin(lbl, list(keep))] = 255
+    return out
+
+def _front_segmentation_vb(img_bgr, close_r=10, min_area=1200):
+    """
+    Segmentación robusta vB:
+      - edges: Canny "suave" + close
+      - silueta: fill de contornos externos grandes
+      - interior (vidrios): erosión adaptada + distance transform
+      - marco = silueta - interior
+      - lentes = interior (quedarse con 2 mayores)
+    Devuelve dict con máscaras y SVGs.
+    """
+    h, w = img_bgr.shape[:2]
+    gray = cv.cvtColor(img_bgr, cv.COLOR_BGR2GRAY)
+
+    # edges: umbrales proporcionales a histograma
+    med = np.median(gray)
+    low = max(0, int(0.66 * med))
+    high = min(255, int(1.33 * med))
+    edges = cv.Canny(gray, low, high)
+    edges = cv.dilate(edges, np.ones((3, 3), np.uint8), 1)
+    if close_r > 0:
+        k = max(1, int(close_r))
+        edges = cv.morphologyEx(edges, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_ELLIPSE, (2*k+1, 2*k+1)))
+
+    # silueta por contornos externos
+    cnts, _ = cv.findContours(edges, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    sil = np.zeros_like(gray)
+    for c in cnts:
+        if cv.contourArea(c) >= max(100.0, float(min_area)):
+            cv.drawContours(sil, [c], -1, 255, thickness=cv.FILLED)
+
+    if sil.max() == 0:
+        # nada: devolvemos edges como guía
+        return dict(
+            gray=_b64_png_dataurl(gray),
+            edges=_b64_png_dataurl(edges),
+            sil=_b64_png_dataurl(sil),
+            inner=_b64_png_dataurl(np.zeros_like(sil)),
+            svg_frame=_mask_to_svg(np.zeros_like(sil)),
+            svg_lenses=_mask_to_svg(np.zeros_like(sil)),
+        )
+
+    # interior vidrios: erosión adaptativa por componente (como tu idea original)
+    num, lbl, st, _ = cv.connectedComponentsWithStats((sil > 0).astype(np.uint8), 8)
+    inner = np.zeros_like(sil)
+    HSV = cv.cvtColor(img_bgr, cv.COLOR_BGR2HSV)
+    S = HSV[:, :, 1]
+    for lb in range(1, num):
+        comp = (lbl == lb).astype(np.uint8) * 255
+        # tamaño del struct elem en función del tamaño del componente
+        w_c = st[lb, cv.CC_STAT_WIDTH]
+        h_c = st[lb, cv.CC_STAT_HEIGHT]
+        # saturación para decidir cuánto erosionar
+        med_sat = float(np.median(S[comp > 0])) if (comp > 0).any() else 0.0
+        r_pct = 0.05 if med_sat >= 35 else 0.09
+        r = max(3, int(r_pct * min(w_c, h_c)))
+        ker = cv.getStructuringElement(cv.MORPH_ELLIPSE, (4*r+2, 4*r+2))
+        core = cv.erode(comp, ker, 1)
+        inner = cv.bitwise_or(inner, core)
+
+    # limpieza suave
+    inner = cv.medianBlur(inner, 5)
+    inner = cv.morphologyEx(inner, cv.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    inner = cv.morphologyEx(inner, cv.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+
+    # adelgazar bordes y quedarnos con "zonas interiores" reales
+    dist = cv.distanceTransform((inner > 0).astype(np.uint8), cv.DIST_L2, 5)
+    inner = (dist > 2).astype(np.uint8) * 255
+
+    # lentes = 2 componentes más grandes
+    lenses = _keep_two_largest_components(inner)
+
+    # marco = silueta - lentes
+    frame = cv.bitwise_and(sil, cv.bitwise_not(lenses))
+
+    return dict(
+        gray=_b64_png_dataurl(gray),
+        edges=_b64_png_dataurl(edges),
+        sil=_b64_png_dataurl(sil),
+        inner=_b64_png_dataurl(lenses),
+        svg_frame=_mask_to_svg(frame),
+        svg_lenses=_mask_to_svg(lenses)
+    )
+
+def _temple_segmentation_vb(img_bgr, close_r=7, min_area=800):
+    """
+    Segmentación simple/rápida de patilla.
+    """
+    g = cv.cvtColor(img_bgr, cv.COLOR_BGR2GRAY)
+    med = np.median(g)
+    low = max(0, int(0.66 * med))
+    high = min(255, int(1.33 * med))
+    e = cv.Canny(g, low, high)
+    e = cv.dilate(e, np.ones((3, 3), np.uint8), 1)
+    if close_r > 0:
+        k = max(1, int(close_r))
+        e = cv.morphologyEx(e, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (2*k+1, 2*k+1)))
+    # fill
+    cnts, _ = cv.findContours(e, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    mask = np.zeros_like(g)
+    for c in cnts:
+        if cv.contourArea(c) >= max(50.0, float(min_area)):
+            cv.drawContours(mask, [c], -1, 255, thickness=cv.FILLED)
+    mask = cv.morphologyEx(mask, cv.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    mask = cv.morphologyEx(mask, cv.MORPH_CLOSE, np.ones((11, 11), np.uint8))
+    return dict(
+        mask_png=_b64_png_dataurl(mask),
+        svg=_mask_to_svg(mask)
+    )
