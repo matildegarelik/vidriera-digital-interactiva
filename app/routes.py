@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, Response,jsonify,current_app, send_from_directory
 from .models import Producto,Categoria,oc_product_to_category, ProductDescription,Usuario, Model
 from app import db, socketio
-from sqlalchemy import func
+from sqlalchemy import func, exists
 from sqlalchemy.orm import joinedload
 from flask_socketio import emit
 import qrcode,io
@@ -28,9 +28,8 @@ def catalogo():
         .join(Producto, Producto.product_id == oc_product_to_category.c.product_id)
         .join(Model, Model.product_id == Producto.product_id)
         .options(
-            # Pre-cargar productos -> descripcion y model_ar para evitar N+1
             joinedload(Categoria.productos).joinedload(Producto.descripcion),
-            joinedload(Categoria.productos).joinedload(Producto.model_ar),
+            joinedload(Categoria.productos).joinedload(Producto.ar_model),
         )
         .filter(Model.visible.is_(True))
         .distinct()
@@ -40,8 +39,8 @@ def catalogo():
     # Para cada categoría, quedarnos SOLO con sus modelos visibles (no productos)
     for cat in categorias:
         modelos_visibles = [
-            p.model_ar for p in cat.productos
-            if p.model_ar is not None and p.model_ar.visible
+            p.ar_model for p in cat.productos
+            if p.ar_model is not None and p.ar_model.visible
         ]
         # Limitar (antes limitabas a 10 productos, ahora a 10 modelos)
         cat.modelos = modelos_visibles[:10]
@@ -58,7 +57,7 @@ def control():
         .join(Model, Model.product_id == Producto.product_id)
         .options(
             joinedload(Categoria.productos).joinedload(Producto.descripcion),
-            joinedload(Categoria.productos).joinedload(Producto.model_ar),
+            joinedload(Categoria.productos).joinedload(Producto.ar_model),
         )
         .filter(Model.visible.is_(True))
         .distinct()
@@ -67,8 +66,8 @@ def control():
 
     for cat in categorias:
         modelos_visibles = [
-            p.model_ar for p in cat.productos
-            if p.model_ar is not None and p.model_ar.visible
+            p.ar_model for p in cat.productos
+            if p.ar_model is not None and p.ar_model.visible
         ]
         cat.modelos = modelos_visibles[:10]
 
@@ -147,6 +146,9 @@ def agregar_lente():
                 ProductDescription.name     # dname
             )
             .join(ProductDescription, Producto.product_id == ProductDescription.product_id)
+            .filter(
+                exists().where(oc_product_to_category.c.product_id == Producto.product_id)
+            )
             .filter(~Producto.product_id.in_(db.session.query(subq.c.product_id)))
             .order_by(func.coalesce(Producto.date_modified, Producto.date_added).desc(),
                     Producto.product_id.desc())

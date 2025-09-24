@@ -27,7 +27,7 @@
                 <div class="producto">
                     <div class="imagen_producto">
                         <img id="imagen_principal"
-                          src="{{ '/'+modelo.path_to_img_front_flattened if modelo.path_to_img_front_flattened else url_for('static', filename='images/placeholder.svg') }}"
+                          src="{{ modelo.path_to_img_front_flattened if modelo.path_to_img_front_flattened else url_for('static', filename='images/placeholder.svg') }}"
                           alt="Imagen {{ modelo.name }}">
                     </div>
                     <div class = "bloque_flecha_descripcion">
@@ -52,7 +52,7 @@
                 {% for modelo in categoria.modelos %}
                 <li class="nav-item" role="presentation">
                     <button class="nav-link  {% if loop.first %} active {% endif %}" id="subtab{{modelo.product_id}}-tab" data-bs-toggle="tab" data-bs-target="#subtab{{modelo.product_id}}" type="button" role="tab">
-                      <img src="{{ '/'+modelo.path_to_img_front_flattened if modelo.path_to_img_front_flattened else url_for('static', filename='images/placeholder.svg') }}"
+                      <img src="{{ modelo.path_to_img_front_flattened if modelo.path_to_img_front_flattened else url_for('static', filename='images/placeholder.svg') }}"
                         class="card-img-top" style="height: 60px;" alt="Imagen {{ modelo.name }}">
                     </button>
                 </li>
