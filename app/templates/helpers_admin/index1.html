@@ -87,7 +87,7 @@ import { SVGLoader }   from "three/examples/jsm/loaders/SVGLoader.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 
 import { setLoading, makePivotAtHinge, clonePatillasAlways, saveBufferAsFile, bakeWorldTransforms , fileToDataURL, makeTintRGBAFromAlphaRows, 
-  bgrToHex, colorToInt, bindExportGLB,composeClippedImageSVG, svgTextToTexture } from '{{ url_for('static', filename='js/helpers_3d.js') }}';
+  bgrToHex, colorToInt, bindExportGLB, svgTextToTexture, urlToDataURL, imageURLToTexture } from '{{ url_for('static', filename='js/helpers_3d.js') }}';
 
 const front = { frameText:'', glassText:'', tex:null };
 const side  = { text:'', tex:null };
@@ -123,6 +123,18 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
     .replace(/\sxmlns:[^=]+="[^"]*"/g, '');
   if (!/xmlns=/.test(txt)) {
     txt = txt.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+  }
+
+  // --- viewBox del SVG (coordenadas de la textura que armamos)
+  const vbMatch = txt.match(/\bviewBox\s*=\s*"([\d.\s\-eE,]+)"/i);
+  let svgVB;
+  if (vbMatch) {
+    const [vx, vy, vw, vh] = vbMatch[1].trim().split(/[\s,]+/).map(Number);
+    svgVB = { minX: vx, minY: vy, maxX: vx + vw, maxY: vy + vh };
+  } else {
+    const w = parseFloat(txt.match(/\bwidth\s*=\s*"([\d.]+)"/i)?.[1] ?? '1024');
+    const h = parseFloat(txt.match(/\bheight\s*=\s*"([\d.]+)"/i)?.[1] ?? '1024');
+    svgVB = { minX: 0, minY: 0, maxX: w, maxY: h };
   }
 
   const loader = new SVGLoader();
@@ -178,9 +190,42 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
   };
   const S = 0.002; // px -> m  (Y invertida)
 
+  const invS = 1 / S;
+  function applyPlanarUV(geom){
+    let minX, maxX, minY, maxY;
+    if (svgVB) {
+      minX = svgVB.minX; maxX = svgVB.maxX;
+      minY = svgVB.minY; maxY = svgVB.maxY;
+    } else if (refBox) {
+      minX = refBox.min.x; maxX = refBox.max.x;
+      minY = refBox.min.y; maxY = refBox.max.y;
+    } else {
+      geom.computeBoundingBox();
+      const bb = geom.boundingBox;
+      minX = bb.min.x * invS; maxX = bb.max.x * invS;
+      minY = bb.min.y * invS; maxY = bb.max.y * invS;
+    }
+    const W = Math.max(1e-6, maxX - minX);
+    const H = Math.max(1e-6, maxY - minY);
+
+    const pos = geom.attributes.position;
+    const uv  = new THREE.BufferAttribute(new Float32Array(pos.count * 2), 2);
+    for (let i=0; i<pos.count; i++){
+      const xPx =  pos.getX(i) * invS;
+      const yPx = -pos.getY(i) * invS;
+      const u = (xPx - minX) / W;
+      const v = 1 - (yPx - minY) / H;
+      uv.setXY(i, u, v);
+    }
+    geom.setAttribute('uv', uv);
+    geom.attributes.uv.needsUpdate = true;
+  }
+
+
+
   // material base (map SIEMPRE si viene tex)
   const baseMat = new THREE.MeshStandardMaterial({
-    color,
+    color: tex ? 0xffffff : color,
     metalness:0.1,
     roughness:0.7,
     side:THREE.DoubleSide,
@@ -220,6 +265,7 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
     const geom = new THREE.ExtrudeGeometry(whiteShapes, opts);
     geom.scale(S, -S, S);
     geom.computeVertexNormals();
+    applyPlanarUV(geom);
 
     const mesh = new THREE.Mesh(geom, baseMat.clone());
     group.add(mesh);
@@ -252,6 +298,7 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
 
       const g = new THREE.ExtrudeGeometry(shape, opts);
       g.scale(S,-S,S); g.computeVertexNormals();
+      applyPlanarUV(g);
       group.add(new THREE.Mesh(g, baseMat.clone()));
     }
   }
@@ -272,6 +319,7 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
     if (best) {
       const g=new THREE.ExtrudeGeometry(best, opts);
       g.scale(S,-S,S); g.computeVertexNormals();
+      applyPlanarUV(g);
       group.add(new THREE.Mesh(g, baseMat.clone()));
     }
   }
@@ -342,7 +390,6 @@ function alignLensesMidpointToFrame(){
   if (lensPivotR) lensPivotR.position.add(delta);
 }
 
-
 function fitCameraToObject(obj, offset=1.25){
   const box = new THREE.Box3().setFromObject(obj);
   const size = new THREE.Vector3(); box.getSize(size);
@@ -372,24 +419,51 @@ function positionPatillas(){
   patillaL.position.set(-hx,hy,hz); patillaR.position.set(hx,hy,hz);
 }
 
+function getSvgSize(svgText){
+  const vb = svgText.match(/\bviewBox\s*=\s*"([\d.\s\-eE,]+)"/i);
+  if (vb) {
+    const [, , vw, vh] = vb[1].trim().split(/[\s,]+/).map(Number);
+    return { w: vw, h: vh };
+  }
+  const w = parseFloat(svgText.match(/\bwidth\s*=\s*"([\d.]+)"/i)?.[1] || '1024');
+  const h = parseFloat(svgText.match(/\bheight\s*=\s*"([\d.]+)"/i)?.[1] || '1024');
+  return { w, h };
+}
+
+
 async function buildModel(){
   if(!front.frameText || !front.glassText || !side.text){ alert('Cargá los 3 SVGs primero.'); return; }
     assembled.clear(); marco=patillaL=patillaR=null;
+  //console.log('front.tex size', front.tex.image.width, front.tex.image.height);
 
-    // --- texturas desde FOTOS reales 
+  // --- textura del marco desde la FOTO frontal -------------
   if (!front.tex && window.FRONT_IMG_URL) {
-    const marcoImgHref = window.FRONT_IMG_URL;              // viene del backend
-    const clippedSVG   = composeClippedImageSVG(front.frameText, marcoImgHref);
-    front.tex = await svgTextToTexture(clippedSVG, 2048);
-    front.tex.needsUpdate = true;
+    try {
+      const marcoImgHref = await urlToDataURL(window.FRONT_IMG_URL);
+      const { w:vw, h:vh } = getSvgSize(front.frameText);
+      const MAXW = 2048;
+      const TW = MAXW;                            // ancho objetivo
+      const TH = Math.round(TW * (vh / vw));      // alto que respeta el viewBox
+      front.tex = await imageURLToTexture(marcoImgHref, TW, TH);
+      if (front.tex) front.tex.needsUpdate = true;
+      console.log('front.tex OK', front.tex.image.width, front.tex.image.height);
+    } catch (e) {
+      console.warn('No se pudo generar textura del marco:', e);
+      front.tex = null; // fallback
+    }
   }
+
+
 
   if (!side.tex && window.TEMPLE_IMG_URL) {
-    const patImgHref   = window.TEMPLE_IMG_URL;             // viene del backend
-    const clippedSVG2  = composeClippedImageSVG(side.text, patImgHref);
-    side.tex = await svgTextToTexture(clippedSVG2, 2048);
+    const patImgHref = await urlToDataURL(window.TEMPLE_IMG_URL);
+    const { w:vwS, h:vhS } = getSvgSize(side.text);
+    const TWs = 2048;
+    const THs = Math.round(TWs * (vhS / vwS));
+    side.tex = await imageURLToTexture(patImgHref, TWs, THs);
     side.tex.needsUpdate = true;
   }
+
 
 
   const DEPTH_FRONT = 1.5;
@@ -419,13 +493,13 @@ async function buildModel(){
     if (POL?.alpha_rows?.length) {
       const tintHex = bgrToHex(POL.tinte_BGR || [0,0,0]);
       const texRGBA = makeTintRGBAFromAlphaRows(512, tintHex, POL.alpha_rows);
+      texRGBA.colorSpace = THREE.SRGBColorSpace;
       const glassMat = new THREE.MeshStandardMaterial({
-        color: tintHex,
-        map: texRGBA,
+        color: 0xffffff,        // el color viene en el map (tinte  alpha filas)
+        map: texRGBA,           // <-- exportable como baseColorTexture (con alpha)
         transparent: true,
         depthWrite: false,
-        depthTest: true,
-        side: THREE.FrontSide,
+        side: THREE.DoubleSide,
         metalness: 0.0,
         roughness: 0.1
       });

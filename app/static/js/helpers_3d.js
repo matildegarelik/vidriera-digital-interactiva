@@ -107,38 +107,55 @@ export async function fileToDataURL(file){
     r.readAsDataURL(file);
   });
 }
-
-// Construye un SVG que toma la imagen y la recorta con los <path> del svg original.
-// Mantiene viewBox y usa clip-rule="evenodd" para respetar agujeros del marco.
-export function composeClippedImageSVG(shapeSvgText, imageHref){
-  const doc = new DOMParser().parseFromString(shapeSvgText, 'image/svg+xml');
-  const svg = doc.querySelector('svg');
-  let viewBox = svg?.getAttribute('viewBox');
-  if(!viewBox){
-    const w = parseFloat(svg?.getAttribute('width')  || '1024');
-    const h = parseFloat(svg?.getAttribute('height') || '1024');
-    viewBox = `0 0 ${w} ${h}`;
-  }
-  // Tomamos TODOS los paths (en marcos.svg suele ser 1 con evenodd + agujeros).
-  const paths = [...doc.querySelectorAll('path')];
-  const pathMarkup = paths.map(p=>{
-    const d = p.getAttribute('d') || '';
-    const fr = p.getAttribute('fill-rule') || p.getAttribute('clip-rule') || 'evenodd';
-    return `<path d="${d}" fill="#000" fill-rule="${fr}" clip-rule="${fr}"/>`;
-  }).join('\n');
-
-  // El image ocupa todo el viewBox; ajustá preserveAspectRatio si querés "cover" o "stretch".
-  return `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">
-  <defs>
-    <clipPath id="clip" clipPathUnits="userSpaceOnUse">
-      ${pathMarkup}
-    </clipPath>
-  </defs>
-  <image href="${imageHref}" x="0" y="0" width="100%" height="100%"
-         preserveAspectRatio="xMidYMid slice" clip-path="url(#clip)"/>
-</svg>`;
+export async function urlToDataURL(url){
+  const resp = await fetch(url, { mode: 'cors' });
+  const blob = await resp.blob();
+  return await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
 }
+
+
+export async function imageURLToTexture(dataURL, targetW=null, targetH=null){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = targetW || img.naturalWidth;
+      const h = targetH || img.naturalHeight;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const g = c.getContext('2d');
+      // “cover” simple: centra y recorta si cambia la relación de aspecto
+      const ir = img.naturalWidth / img.naturalHeight;
+      const cr = w / h;
+      let sx, sy, sw, sh;
+      if (ir > cr) { // recorto a lo ancho
+        sh = img.naturalHeight;
+        sw = sh * cr;
+        sx = (img.naturalWidth - sw) / 2;
+        sy = 0;
+      } else {      // recorto a lo alto
+        sw = img.naturalWidth;
+        sh = sw / cr;
+        sx = 0;
+        sy = (img.naturalHeight - sh) / 2;
+      }
+      g.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.needsUpdate = true;
+      resolve(tex);
+    };
+    img.onerror = reject;
+    img.src = dataURL;  // <- DataURL que ya generás con urlToDataURL()
+  });
+}
+
 
 export function svgTextToTexture(svgText, size=1024){
   return new Promise((resolve,reject)=>{
@@ -149,7 +166,9 @@ export function svgTextToTexture(svgText, size=1024){
       ctx.clearRect(0,0,size,size);
       ctx.drawImage(img,0,0,size,size);
       const tex=new THREE.CanvasTexture(c);
-      tex.colorSpace=THREE.SRGBColorSpace; tex.needsUpdate=true;
+      tex.colorSpace=THREE.SRGBColorSpace; 
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; 
+      tex.needsUpdate=true;
       resolve(tex);
     };
     img.onerror=reject;
@@ -203,7 +222,7 @@ export function makeTintRGBAFromAlphaRows(H, tintHex, alpha_rows){
   for (let y=0; y<H; y++){
     const i = Math.round((y/(H-1))*(N-1));
     const a_api = Math.max(0, Math.min(1, A[i]));  // opacidad que viene de la API
-    const a = a_api * 0.3;                      // ALIVIANAR (más transparente)
+    const a = a_api * 0.9;                      // ALIVIANAR (más transparente)
     const a255 = Math.round(a * 255);
 
     for (let x=0; x<2; x++){
