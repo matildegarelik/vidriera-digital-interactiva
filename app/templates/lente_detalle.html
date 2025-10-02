@@ -101,8 +101,9 @@
           <div class="card-header">Imagen frente (aplanada)</div>
           <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
             {% if ar_model.path_to_img_front_flattened %}
-              <img src="{{ ar_model.path_to_img_front_flattened }}" alt="Frente aplanada" class="img-fluid">
+              <img src="{{ '/' ~ ar_model.path_to_img_front_flattened.lstrip('/') }}" alt="Frente aplanada" class="img-fluid">
             {% else %}
+
               <span class="text-muted">Sin archivo</span>
             {% endif %}
           </div>
@@ -118,7 +119,7 @@
           <div class="card-header">Imagen perfil (aplanada)</div>
           <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
             {% if ar_model.path_to_img_side_flattened %}
-              <img src="{{ ar_model.path_to_img_side_flattened }}" alt="Perfil aplanada" class="img-fluid">
+              <img src="{{ '/' ~ ar_model.path_to_img_side_flattened.lstrip('/') }}" alt="Perfil aplanada" class="img-fluid">
             {% else %}
               <span class="text-muted">Sin archivo</span>
             {% endif %}
@@ -135,7 +136,7 @@
           <div class="card-header">Imagen patilla (aplanada)</div>
           <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
             {% if ar_model.path_to_img_temple_flattened %}
-              <img src="{{ ar_model.path_to_img_temple_flattened }}" alt="Patilla aplanada" class="img-fluid">
+              <img src="{{ '/' ~ ar_model.path_to_img_temple_flattened.lstrip('/') }}" alt="Patilla aplanada" class="img-fluid">
             {% else %}
               <span class="text-muted">Sin archivo</span>
             {% endif %}
@@ -152,7 +153,7 @@
           <div class="card-header">Imagen fondo (aplanado)</div>
           <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
             {% if ar_model.path_to_img_bg_flattened %}
-              <img src="{{ ar_model.path_to_img_bg_flattened }}" alt="Fondo aplanado" class="img-fluid">
+              <img src="{{ '/' ~ ar_model.path_to_img_temple_flattened.lstrip('/') }}" alt="Fondo aplanado" class="img-fluid">
             {% else %}
               <span class="text-muted">Sin archivo</span>
             {% endif %}
