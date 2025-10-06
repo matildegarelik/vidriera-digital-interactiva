@@ -55,41 +55,6 @@
         </div>
     </div>
 
-    <!-- <table class="table">
-        <thead>
-            <tr>
-                <th></th>
-                <th>ID</th>
-                <th>Nombre</th>
-                <th>Acciones</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for lente in models %}
-            <tr>
-                <td><img src="{{lente.path_to_img_front}}" style="height: 35px; width: 35px;;"></td>
-                <td>{{lente.model_id}}</td>
-                <td>{{lente.name}}</td>
-                <td>
-                    <a href="{{ url_for('main.lente_detalle', lente_id=lente.model_id) }}" class="btn btn-sm btn-outline-secondary" title="Editar">
-                        <i class="fas fa-pencil-alt"></i>
-                    </a>
-                    <button class="btn btn-sm btn-outline-info toggle-visible" data-id="{{ lente.model_id }}" title="Visibilidad">
-                        {% if lente.visible %}
-                            <i class="fas fa-eye"></i>
-                        {% else %}
-                            <i class="fas fa-eye-slash"></i>
-                        {% endif %}
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger delete-lente" data-id="{{ lente.model_id }}" title="Eliminar">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table> -->
-
 </div>
 
 {% endblock %}
