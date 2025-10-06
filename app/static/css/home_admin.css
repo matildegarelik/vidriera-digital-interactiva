@@ -16,7 +16,7 @@
 
 .barra_lateral .bienvenido{
     font-family: "Montserrat";
-    font-size: 1.2rem;
+    font-size: 600;
     margin-bottom: 10px;
 }
 
@@ -26,8 +26,9 @@
 
 .container_modelos{
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px,1fr));
+    grid-template-columns: repeat(auto-fit, 256px);
     gap: 20px;
+    justify-content: start;
     padding: 20px;
     height: 100%;
 
@@ -45,6 +46,24 @@
     border-radius: 8px;
     overflow: hidden;
 }
+.agregar_item{
+    background: --secondary-color;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.agregar_item a {
+    color: background-color;
+    font-size: 100px;
+    font-family: "Montserrat";
+    text-decoration: none;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
 
 .info_lente_cuadricula {
     flex: 0 0 40px; 
@@ -56,8 +75,49 @@
     box-sizing: border-box;
 }
 
-.item_cuadricula img {
-     flex: 1;
+.img_botones{
+    position: relative;
     width: 100%;
-    object-fit: cover; 
+    height: 100%;
+    overflow: hidden;
+}
+
+.img_botones img {
+    width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.botones_atras{
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 20px 0;
+    background: #f2efe88b;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.botones_atras a,
+.botones_atras button {
+  width: 80%;  
+  height: 25%;             
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+
+.img_botones:hover .botones_atras {
+  opacity: 1;
+}
+
+.img_botones:hover img {
+  opacity: 0.3;
+  transform: scale(1.05);
 }

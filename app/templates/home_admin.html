@@ -16,7 +16,6 @@
     <div class="barra_lateral">
         <h1 class="bienvenido">Bienvenido!</h1>
         <a href="/logout" class="btn btn-outline-primary" style="float:right">Logout</a>
-        <a href="{{ url_for('main.agregar_lente') }}" class="btn btn-primary" style="float:right">Agregar</a>
     </div>
 
 
@@ -36,9 +35,23 @@
                             {% endif %}
                     </button>
                 </div>
-                <img class="img_cuadricula" src="{{lente.path_to_img_front}}">
+                <div class="img_botones">
+                    <img class="img_cuadricula" src="{{lente.path_to_img_front}}">
+                    <div class="botones_atras">
+                        <a href="{{ url_for('main.lente_detalle', lente_id=lente.model_id) }}" class="btn btn-sm btn-outline-secondary" title="Editar">
+                        <i class="btn_accion editar">Editar</i>
+                        </a>
+                        <button class="btn btn-sm btn-outline-primary mover" title="Mover">Mover</button>
+                        <button class="btn btn-sm btn-outline-danger delete-lente" data-id="{{ lente.model_id }}" title="Eliminar">
+                        <i>Eliminar</i>
+                        </button>
+                    </div>
+                </div>
             </div>
             {% endfor %}
+            <div class="item_cuadricula agregar_item">
+                <a href="{{ url_for('main.agregar_lente') }}" class="btn btn-primary" style="float:right">+</a>
+            </div>
         </div>
     </div>
 
