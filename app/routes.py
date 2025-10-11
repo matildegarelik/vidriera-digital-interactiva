@@ -113,8 +113,8 @@ def login():
 @main.route('/home_admin')
 def home_admin():
     #if 'usuario' not in session:
-     #   flash('Debes iniciar sesión primero')
-      #  return redirect(url_for('main.login'))
+    #    flash('Debes iniciar sesión primero')
+    #    return redirect(url_for('main.login'))
 
     # traemos todos los productos con su descripción
     models = Model.query.all()
