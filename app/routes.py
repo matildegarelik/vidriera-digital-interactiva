@@ -257,6 +257,26 @@ def delete_lente(lente_id):
     return {'success': True}
 
 
+@main.route('/lente_modelo/<int:lente_id>', methods=['GET', 'POST'])
+def lente_modelo(lente_id):
+    # Traer el modelo correspondiente
+    ar_model = Model.query.get_or_404(lente_id)
+
+    if request.method == 'POST':
+        # Acá procesás el formulario para cambiar o agregar el modelo 3D
+        # Ejemplo:
+        file = request.files.get('path_to_glb')
+        if file:
+            filename = secure_filename(file.filename)
+            save_path = os.path.join('uploads', filename)
+            file.save(save_path)
+            ar_model.path_to_glb = save_path
+            db.session.commit()
+            flash('Modelo actualizado correctamente')
+            return redirect(url_for('main.lente_detalle', lente_id=lente_id))
+
+    return render_template('lente_modelo.html', ar_model=ar_model)
+
 @main.route("/_admin_helpers/aplanar_imagenes/<int:model_id>",methods=['GET','POST'])
 def aplanar_imagenes(model_id):
     m = Model.query.get_or_404(model_id)
