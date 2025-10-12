@@ -115,8 +115,13 @@
   background-color: var(--secondary-color);
   color:  var(--background-color);
   border-radius: 8px;
+  display: inline-block;
+
   font-family: "Montserrat";
   font-size: larger;
+  text-decoration: none;
+  text-align: center;
+
   cursor: pointer;
   transition: background 0.3s ease;
 }
