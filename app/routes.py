@@ -232,7 +232,15 @@ def editar_lente(lente_id: int):
 
     db.session.commit()
     flash('Modelo actualizado con éxito')
-    return redirect(url_for('main.lente_detalle', lente_id=lente_id))
+#ACA MODIFIQUE    
+      # Detectar desde qué página vino el formulario
+    origen = request.form.get('from_page')
+
+    # Redirigir según el origen
+    if origen == 'modelo':
+        return redirect(url_for('main.lente_modelo', lente_id=lente_id))
+    else:
+        return redirect(url_for('main.lente_detalle', lente_id=lente_id))
 
 @main.route('/toggle_visible/<int:lente_id>', methods=['POST'])
 def toggle_visible(lente_id):
@@ -310,11 +318,11 @@ def aplanar_imagenes(model_id):
         if f_side:   m.path_to_img_side_flattened   = f_side
         if f_temple: m.path_to_img_temple_flattened = f_temple
         if f_bg:     m.path_to_img_bg_flattened     = f_bg
-
+#ACA CAMBIEEE
         db.session.commit()
         return jsonify({
             "ok": True,
-            "redirect": url_for('main.lente_detalle', lente_id=model_id)
+            "redirect": url_for('main.lente_modelo', lente_id=model_id)
         })
 
 
@@ -353,11 +361,11 @@ def imgs_to_svg(model_id):
         if f_frame:   m.path_to_svg_frame   = f_frame
         if f_glasses: m.path_to_svg_glasses = f_glasses
         if f_temple:  m.path_to_svg_temple  = f_temple
-
+#ACA CAMBIE
         db.session.commit()
         return jsonify({
             "ok": True,
-            "redirect": url_for('main.lente_detalle', lente_id=model_id)
+            "redirect": url_for('main.lente_modelo', lente_id=model_id)
         })
 
     # GET: pre-cargar las flattened si existen
@@ -393,11 +401,11 @@ def svgs_to_glb(model_id):
 
         m.path_to_glb = str(Path("models") / final_name)
         db.session.commit()
-
+##ACA CAMBIEE
         # devolvemos a dónde ir luego
         return jsonify({
             "ok": True,
-            "redirect": url_for('main.lente_detalle', lente_id=model_id)
+            "redirect": url_for('main.lente_modelo', lente_id=model_id)
         })
 
     marco_url  = url_for('main.uploads', filename=norm(m.path_to_svg_frame))   if m.path_to_svg_frame   else ''
