@@ -326,7 +326,7 @@
         <textarea name="config_for_display" class="form-control" rows="6">{{ ar_model.config_for_display|tojson if ar_model.config_for_display else '' }}</textarea>
         <div class="form-text">Pegá un JSON válido o dejá vacío.</div>
         <div class="col-12 mb-3">
-          <a href="{{ url_for('main.glb_a_cara') }}" target="_blank" class="btn btn-info text-light btn-block">Helper para armarlo</a>
+          <a href="{{ url_for('main.glb_a_cara',model_id=ar_model.model_id) }}" target="_blank" class="btn btn-info text-light btn-block">Helper para armarlo</a>
         </div>
       </div>
     </div>

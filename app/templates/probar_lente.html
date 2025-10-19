@@ -1,0 +1,263 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Probar lente</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/panel_admin.css') }}">
+  <style>
+    /* Igual a index2: video full-screen y canvas encima */
+    html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#000; }
+    #wrap {
+      position:fixed; inset:0; width:100vw; height:100vh; overflow:hidden;
+    }
+    #video, #three {
+      position:absolute; left:0; top:0; width:100%; height:100%;
+      display:block;
+    }
+    /* Si en index2 espejás el video por CSS, dejalo igual.
+       El cálculo de coordenadas ya asume video espejado. */
+    /* #video { transform: scaleX(-1); } */
+  </style>
+
+  <!-- three.js + loaders -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="wrap">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="three"></canvas>
+  </div>
+
+  <!-- MediaPipe FaceMesh (mismas versiones que index2) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+    // === Parámetros fijos desde DB (config_for_display) ===
+    const PARAMS = {{ (ar_model.config_for_display or {}) | tojson }};
+
+    // Defaults compatibles con index2 por si falta algún campo
+    const defaults = {
+      offsetX: 0,
+      offsetY: 40,
+      widthFactor: 2.4,
+      extraScale: 1.0,
+      rotDeg: 0,
+      trackFace: true,  // en vista de usuario, por defecto sí sigue la cara
+      use3D: true,      // yaw/pitch ON por defecto
+      rotX0: 0, rotY0: 0, rotZ0: 0
+    };
+    const params = Object.assign({}, defaults, PARAMS);
+
+    // === GLB del modelo ===
+    const GLB_URL = "{{ url_for('main.uploads',
+                      filename=(ar_model.path_to_glb or '')
+                               |replace('\\','/')
+                               |replace('uploads/','')
+                               |trim('/') ) }}";
+
+    // ==== Webcam ====
+    const video = document.getElementById('video');
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user' }, audio: false
+    });
+    video.srcObject = stream; await video.play();
+
+    // ==== Three.js ====
+    const canvas = document.getElementById('three');
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
+
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1;
+
+    const scene  = new THREE.Scene();
+    // Misma cámara ortográfica que index2 y mismos límites dinámicos
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2000);
+    camera.position.z = 10;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+    dir.position.set(0.5, 1, 1);
+    scene.add(dir);
+
+    function resize(){
+      const W = window.innerWidth, H = window.innerHeight;
+      renderer.setSize(W, H, false);
+      camera.left = -W/2; camera.right = W/2; camera.top = H/2; camera.bottom = -H/2;
+      camera.updateProjectionMatrix();
+    }
+    addEventListener('resize', resize);
+    video.addEventListener('loadedmetadata', resize);
+    resize();
+
+    // ==== GLB ====
+    function hardenMaterials(root) {
+      root.traverse(o => {
+        if (!o.isMesh) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach(m => {
+          if (!m) return;
+          m.depthTest = true;
+          m.depthWrite = true;
+          m.side = THREE.DoubleSide;
+          m.polygonOffset = true;
+          m.polygonOffsetFactor = 1;
+          m.polygonOffsetUnits = 1;
+        });
+      });
+    }
+
+    const model = new THREE.Group(); scene.add(model);
+    let baseWidthPx = 300; // reemplazado al cargar
+
+    const baseQ = new THREE.Quaternion();
+    function computeBaseQ(){
+      baseQ.setFromEuler(new THREE.Euler(
+        THREE.MathUtils.degToRad(params.rotX0),
+        THREE.MathUtils.degToRad(params.rotY0),
+        THREE.MathUtils.degToRad(params.rotZ0),
+        'XYZ'
+      ));
+    }
+    computeBaseQ();
+
+    function centerAndMeasure(node){
+      const box = new THREE.Box3().setFromObject(node);
+      const c = box.getCenter(new THREE.Vector3());
+      const s = box.getSize(new THREE.Vector3());
+      node.position.sub(c);
+      return { width: s.x, height: s.y, depth: s.z };
+    }
+
+    const loader = new GLTFLoader();
+    await new Promise((resolve, reject)=>{
+      loader.load(GLB_URL, (gltf)=>{
+        const sceneNode = gltf.scene || gltf.scenes?.[0];
+        model.add(sceneNode);
+        hardenMaterials(sceneNode);
+        const dims = centerAndMeasure(sceneNode);
+        baseWidthPx = Math.max(1, dims.width);
+        resolve();
+      }, undefined, reject);
+    });
+
+    // ==== FaceMesh ====
+    const faceMesh = new window.FaceMesh({
+      locateFile: (file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`
+    });
+    faceMesh.setOptions({
+      maxNumFaces:1, refineLandmarks:true,
+      minDetectionConfidence:0.6, minTrackingConfidence:0.6
+    });
+
+    // Mapeo coordenadas -> pantalla (igual que index2)
+    function toScreen(pt){
+      const rect = video.getBoundingClientRect();
+      const W = renderer.domElement.width, H = renderer.domElement.height;
+      const x = (1-pt.x)*rect.width;  // espejo horizontal (asumimos video espejado)
+      const y = pt.y*rect.height;
+      const sx = x - rect.width/2, sy = rect.height/2 - y;
+      const scaleX = W/rect.width, scaleY = H/rect.height;
+      return new THREE.Vector3(sx*scaleX, sy*scaleY, 0);
+    }
+
+    // Suavizado
+    const smooth = { pos: new THREE.Vector3(), rot: new THREE.Euler(), scale: 1, alphaPos: 0.25, alphaRot: 0.25, alphaScl: 0.25 };
+    function lerpAngle(a, b, t){
+      let d = (b - a + Math.PI) % (2*Math.PI) - Math.PI;
+      return a + d * t;
+    }
+
+    function onResults(res){
+      if (model.children.length === 0) return;
+
+      if (!params.trackFace) {
+        // Modo estático (igual a index2)
+        model.position.set(params.offsetX, params.offsetY, 0);
+
+        const W = renderer.domElement.width;
+        const defaultWidth = 0.40 * W;
+        const s = (defaultWidth / Math.max(1, baseWidthPx)) * params.extraScale;
+        model.scale.setScalar(s);
+
+        const rollExtra = THREE.MathUtils.degToRad(params.rotDeg);
+        const qRoll = new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,rollExtra,'YXZ'));
+        model.quaternion.copy(baseQ).multiply(qRoll);
+        return;
+      }
+
+      // Seguir cara (igual a index2)
+      const lm = res.multiFaceLandmarks?.[0];
+      if (!lm) return;
+
+      const L=33, R=263, NOSE=1;
+
+      const pL = toScreen(lm[L]);
+      const pR = toScreen(lm[R]);
+      const center = pL.clone().add(pR).multiplyScalar(0.5);
+      const dxS = pR.x - pL.x, dyS = pR.y - pL.y;
+      const dist = Math.hypot(dxS, dyS);
+
+      // Orientación (no espejada)
+      const dx0 = lm[R].x - lm[L].x;
+      const dy0 = lm[R].y - lm[L].y;
+
+      let roll = Math.atan2(dy0, dx0);
+
+      const denomYaw   = Math.max(1e-3, Math.abs(dx0));
+      const denomPitch = Math.max(1e-3, Math.abs(lm[NOSE].y - (lm[L].y + lm[R].y)/2));
+      let yaw   = Math.atan((lm[R].z - lm[L].z) / denomYaw);
+      let pitch = Math.atan((lm[NOSE].z - (lm[L].z + lm[R].z)/2) / denomPitch);
+
+      if (!params.use3D) { yaw = 0; pitch = 0; }
+
+      yaw   = THREE.MathUtils.clamp(yaw,   -0.8, 0.8);
+      pitch = THREE.MathUtils.clamp(pitch, -0.6, 0.6);
+
+      const targetPos = new THREE.Vector3(center.x + params.offsetX, center.y + params.offsetY, 0);
+      const desiredWidth = dist * params.widthFactor;
+      const targetScale  = (desiredWidth / Math.max(1, baseWidthPx)) * params.extraScale;
+
+      const rotExtra = params.rotDeg * Math.PI / 180;
+      const targetRot = new THREE.Euler(pitch, yaw, roll + rotExtra, 'YXZ');
+
+      smooth.pos.lerp(targetPos, smooth.alphaPos);
+      smooth.scale = THREE.MathUtils.lerp(smooth.scale, targetScale, smooth.alphaScl);
+      smooth.rot.x = lerpAngle(smooth.rot.x, targetRot.x, smooth.alphaRot);
+      smooth.rot.y = lerpAngle(smooth.rot.y, targetRot.y, smooth.alphaRot);
+      smooth.rot.z = lerpAngle(smooth.rot.z, targetRot.z, smooth.alphaRot);
+
+      model.position.copy(smooth.pos);
+      model.scale.setScalar(smooth.scale);
+
+      const followQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(smooth.rot.x, smooth.rot.y, smooth.rot.z, 'YXZ'));
+      model.quaternion.copy(baseQ);
+      model.quaternion.premultiply(followQ);
+    }
+
+    faceMesh.onResults(onResults);
+
+    const cam = new window.Camera(video, {
+      onFrame: async()=>{ await faceMesh.send({ image: video }); },
+      width: 1280, height: 720
+    });
+    cam.start();
+
+    // Render loop
+    (function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
+  </script>
+</body>
+</html>

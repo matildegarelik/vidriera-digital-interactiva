@@ -37,6 +37,14 @@
                             <h3 id="precio_prod">${{modelo.product.price}}</h3>
                             <p id="descripcion_prod">{{modelo.description}}</p>
                         </div>
+
+                        <div class="mt-3">
+                          <a class="btn btn-primary"
+                            href="{{ url_for('main.probar_lente', model_id=modelo.model_id) }}">
+                            Probar
+                          </a>
+                        </div>
+
                         
                     </div>
                 </div>
