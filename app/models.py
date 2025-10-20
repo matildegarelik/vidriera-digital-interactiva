@@ -5,7 +5,7 @@ from sqlalchemy.dialects.mysql import JSON
 oc_product_to_category = db.Table(
     "oc_product_to_category",
     db.Column("product_id", db.Integer, db.ForeignKey("oc_product.product_id"), primary_key=True),
-    db.Column("category_id", db.Integer, db.ForeignKey("oc_category.category_id"), primary_key=True)
+    db.Column("category_id", db.Integer, db.ForeignKey("oc_category.category_id"), primary_key=True),
 )
 
 class Categoria(db.Model):
@@ -108,5 +108,7 @@ class Model(db.Model):
     path_to_glb = db.Column(db.String(255), nullable=True)
 
     config_for_display = db.Column(JSON, nullable=True)
+
+    sort_order = db.Column(db.Integer, default=0, nullable=False, index=True)
 
     product = db.relationship("Producto", back_populates="ar_model", uselist=False)

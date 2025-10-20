@@ -2,7 +2,18 @@
 
 {% block css %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/home_admin.css') }}">
-
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        .mover {
+            cursor: move; /* O 'grab' */
+        }
+        /* Estilo del item fantasma mientras se arrastra */
+        .sortable-ghost {
+            opacity: 0.4;
+            background: #f0f0f0;
+            border: 1px dashed #ccc;
+        }
+    </style>
 {% endblock %}
 
 {% block content %}
@@ -12,19 +23,17 @@
 {% endif %}
 {% endwith %}
 <div class="container">
-      <!-- Sidebar -->
-    <div class="barra_lateral">
+      <div class="barra_lateral">
         <h1 class="bienvenido">Bienvenido!</h1>
         <a href="/logout" class="btn btn-outline-primary" style="float:right">Logout</a>
     </div>
 
 
-     <!-- Main content -->
-    <div class="sector_modelos">
+     <div class="sector_modelos">
         <h3>Modelos de lentes</h3>
-        <div class="container_modelos">
+        <div class="container_modelos" id="sortable-models-container">
             {% for lente in models%}
-            <div class="item_cuadricula">
+            <div class="item_cuadricula" data-model-id="{{ lente.model_id }}">
                 <div class="info_lente_cuadricula">
                     <p class="nombre_cuadricula">{{lente.name}}</p>
                     <button class="btn btn-sm btn-outline-info toggle-visible" data-id="{{ lente.model_id }}" title="Visibilidad">
@@ -36,12 +45,14 @@
                     </button>
                 </div>
                 <div class="img_botones">
-                    <img class="img_cuadricula" src="{{lente.path_to_img_front}}">
+                    <img class="img_cuadricula" src="{{lente.path_to_img_front if lente.path_to_img_front else url_for('static', filename='images/placeholder.svg') }}">
                     <div class="botones_atras">
                         <a href="{{ url_for('main.lente_detalle', lente_id=lente.model_id) }}" class="btn btn-sm btn-outline-secondary" title="Editar">
                         <i class="btn_accion editar">Editar</i>
                         </a>
-                        <button class="btn btn-sm btn-outline-primary mover" title="Mover">Mover</button>
+                        <button class="btn btn-sm btn-outline-primary mover" title="Mover">
+                            <i class="fas fa-arrows-alt"></i>
+                        </button>
                         <button class="btn btn-sm btn-outline-danger delete-lente" data-id="{{ lente.model_id }}" title="Eliminar">
                         <i>Eliminar</i>
                         </button>
@@ -60,7 +71,10 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
 <script>
+    // --- Lógica existente de toggle-visible ---
     document.querySelectorAll('.toggle-visible').forEach(button => {
         button.addEventListener('click', () => {
             const id = button.dataset.id;
@@ -75,9 +89,12 @@
         });
     });
 
+    // --- Lógica existente de delete-lente (con corrección) ---
     document.querySelectorAll('.delete-lente').forEach(button => {
         button.addEventListener('click', () => {
             const id = button.dataset.id;
+            // Corrección: Tu HTML usa 'item_cuadricula', no 'tr'
+            const item = button.closest('.item_cuadricula'); 
 
             Swal.fire({
                 title: '¿Estás segura/o?',
@@ -95,7 +112,7 @@
                     .then(res => res.json())
                     .then(data => {
                         if (data.success) {
-                            button.closest('tr').remove();
+                            item.remove(); // Quitar el item del DOM
                             Swal.fire('Eliminado', 'El modelo fue eliminado.', 'success');
                         }
                     });
@@ -103,5 +120,51 @@
             });
         });
     });
+
+    // --- NUEVA LÓGICA PARA ORDENAR ---
+    const container = document.getElementById('sortable-models-container');
+    if (container) {
+        new Sortable(container, {
+            animation: 150,
+            handle: '.mover', // Usar el botón "Mover" como manija
+            ghostClass: 'sortable-ghost', // Clase CSS para el fantasma
+            filter: '.agregar_item', // No permitir mover el botón "+"
+            preventOnFilter: true, // Necesario para que 'filter' funcione
+            
+            // Función que se llama al soltar el item
+            onEnd: function (evt) {
+                // Obtener todos los items en el nuevo orden
+                const items = container.querySelectorAll('.item_cuadricula:not(.agregar_item)');
+                
+                // 1. Crear un array con los model_id en el nuevo orden
+                const newOrderModelIds = Array.from(items).map(item => item.dataset.modelId);
+
+                // 2. Enviar este array al backend
+                fetch('/admin/update_order', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model_ids: newOrderModelIds
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log('Orden global actualizado');
+                        // Aquí podrías mostrar una notificación "toast" de éxito si quisieras
+                    } else {
+                        console.error('Error al actualizar orden:', data.error);
+                        alert('Error al guardar el nuevo orden.');
+                    }
+                })
+                .catch(err => {
+                    console.error('Error de red:', err);
+                    alert('Error de red al guardar el orden.');
+                });
+            }
+        });
+    }
 </script>
 {% endblock %}

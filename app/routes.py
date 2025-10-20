@@ -21,7 +21,7 @@ def index():
 
 @main.route('/catalogo')
 def catalogo():
-    # Categorías que tienen al menos un Model.visible == True
+    # 1. Obtener categorías (sin cambios en esta parte)
     categorias = (
         db.session.query(Categoria)
         .join(oc_product_to_category, oc_product_to_category.c.category_id == Categoria.category_id)
@@ -36,20 +36,26 @@ def catalogo():
         .all()
     )
 
-    # Para cada categoría, quedarnos SOLO con sus modelos visibles (no productos)
+    # 2. Para cada categoría, quedarnos con modelos visibles Y ORDENARLOS
     for cat in categorias:
-        modelos_visibles = [
+        modelos_visibles_query = [
             p.ar_model for p in cat.productos
             if p.ar_model is not None and p.ar_model.visible
         ]
-        # Limitar (antes limitabas a 10 productos, ahora a 10 modelos)
-        cat.modelos = modelos_visibles[:10]
+        
+        # --- CAMBIO AQUÍ: Ordenar usando la nueva columna ---
+        modelos_ordenados = sorted(modelos_visibles_query, key=lambda m: m.sort_order)
+        # --- FIN CAMBIO ---
+
+        # Limitar
+        cat.modelos = modelos_ordenados[:10]
 
     return render_template('catalogo.html', categorias=categorias)
 
 
 @main.route('/control')
 def control():
+    # 1. Obtener categorías (sin cambios en esta parte)
     categorias = (
         db.session.query(Categoria)
         .join(oc_product_to_category, oc_product_to_category.c.category_id == Categoria.category_id)
@@ -64,12 +70,18 @@ def control():
         .all()
     )
 
+    # 2. Para cada categoría, ORDENAR
     for cat in categorias:
-        modelos_visibles = [
+        modelos_visibles_query = [
             p.ar_model for p in cat.productos
             if p.ar_model is not None and p.ar_model.visible
         ]
-        cat.modelos = modelos_visibles[:10]
+        
+        # --- CAMBIO AQUÍ: Ordenar usando la nueva columna ---
+        modelos_ordenados = sorted(modelos_visibles_query, key=lambda m: m.sort_order)
+        # --- FIN CAMBIO ---
+
+        cat.modelos = modelos_ordenados[:10]
 
     return render_template("control.html", categorias=categorias)
 
@@ -110,25 +122,25 @@ def login():
 
     return render_template('login.html')
 
-@main.route('/home_admin')
-def home_admin():
-    #if 'usuario' not in session:
-     #   flash('Debes iniciar sesión primero')
-      #  return redirect(url_for('main.login'))
-
-    # traemos todos los productos con su descripción
-    models = Model.query.all()
-
-    return render_template('home_admin.html', models=models)
-
-
 @main.route('/logout')
 def logout():
     session.pop('usuario', None)
     flash('Sesión cerrada correctamente')
     return redirect(url_for('main.login'))
 
+@main.route('/home_admin')
+def home_admin():
+    #if 'usuario' not in session:
+     #   flash('Debes iniciar sesión primero')
+      #  return redirect(url_for('main.login'))
 
+    # --- CAMBIO AQUÍ ---
+    # traemos todos los modelos ORDENADOS
+    models = Model.query.order_by(Model.sort_order).all()
+    # --- FIN CAMBIO ---
+
+    return render_template('home_admin.html', models=models)
+    
 @main.route('/uploads/<path:filename>')
 def uploads(filename):
     return send_from_directory(current_app.config['UPLOAD_FOLDER'], filename)
@@ -412,7 +424,6 @@ def glb_a_cara(model_id):
     # GET
     return render_template('helpers_admin/index2.html', ar_model=ar_model)
 
-
 @main.route("/api/polarizar/<int:model_id>",methods=['GET'])
 def api_polarizar(model_id):
     m = Model.query.get_or_404(model_id)
@@ -508,3 +519,35 @@ def probar_lente(model_id: int):
         abort(404, description="El modelo no tiene GLB disponible")
 
     return render_template('probar_lente.html', ar_model=ar_model)
+
+@main.route('/admin/update_order', methods=['POST'])
+def update_order():
+    # Aquí podrías re-validar la sesión de admin si quieres
+    # if 'usuario' not in session:
+    #    return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+            
+    data = request.get_json()
+    model_ids = data.get('model_ids') # Esta es una lista de model_id
+
+    if model_ids is None:
+        return jsonify({'success': False, 'error': 'Missing data'}), 400
+
+    try:
+        # Actualizar el sort_order para cada modelo
+        with db.session.begin_nested():
+            # Creamos un mapa para actualizar en el orden recibido
+            model_map = {m.model_id: m for m in Model.query.filter(Model.model_id.in_(model_ids)).all()}
+            
+            for index, model_id_str in enumerate(model_ids):
+                model_id = int(model_id_str)
+                if model_id in model_map:
+                    model_map[model_id].sort_order = index
+        
+        db.session.commit()
+        return jsonify({'success': True})
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error updating order: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+# --- FIN RUTA NUEVA ---

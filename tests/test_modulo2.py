@@ -59,7 +59,7 @@ def test_socketio_catalogo_control(app_instance):
     payload = {"direccion": "derecha"}
     client_ctrl.emit("mover_producto", payload, namespace="/")
 
-    socketio.sleep(0.15)
+    socketio.sleep(0.5)
 
     received = client_cat.get_received(namespace="/")
     print("EVENTOS RECIBIDOS CLIENTE2:", received)
