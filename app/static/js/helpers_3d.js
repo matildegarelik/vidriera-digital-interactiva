@@ -207,39 +207,45 @@ export function bgrToHex([B,G,R]) {
   return `#${h(R)}${h(G)}${h(B)}`;
   }
 export function colorToInt(hex){ return parseInt(hex.replace('#','0x')); }
+
 export function makeTintRGBAFromAlphaRows(H, tintHex, alpha_rows){
   const c = document.createElement('canvas');
   c.width = 2; c.height = H;
   const g = c.getContext('2d');
-
-  // hex → r,g,b (0..255)
   const v = parseInt((tintHex||'#000000').replace('#',''),16) || 0;
   const r = (v>>16)&255, gg = (v>>8)&255, b = v&255;
 
   const img = g.createImageData(c.width, c.height);
   const A = alpha_rows, N = A.length;
+  if (!N) return new THREE.CanvasTexture(c);
 
   for (let y=0; y<H; y++){
-    const i = Math.round((y/(H-1))*(N-1));
-    const a_api = Math.max(0, Math.min(1, A[i]));  // opacidad que viene de la API
-    const a = a_api * 0.9;                      // ALIVIANAR (más transparente)
+    
+    const i = Math.round((y/(H-1))*(N-1)); //
+
+    const a_api = Math.max(0, Math.min(1, A[i] ?? A[N-1]));
+    const a = a_api * 0.9; //
     const a255 = Math.round(a * 255);
 
+    // ... (loop para rellenar img.data) ...
     for (let x=0; x<2; x++){
       const k = (y*2 + x)*4;
-      img.data[k+0] = r;        // R
-      img.data[k+1] = gg;       // G
-      img.data[k+2] = b;        // B
-      img.data[k+3] = a255;     // A = opacidad escalada
+      img.data[k+0] = r; img.data[k+1] = gg; img.data[k+2] = b; img.data[k+3] = a255;
     }
   }
   g.putImageData(img, 0, 0);
 
   const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.colorSpace = THREE.SRGBColorSpace; //
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
   tex.needsUpdate = true;
   return tex;
 }
+
+
 export function applyPolarMultiplyToFrontSVG({ T_RGB, T_Y, alpha_rows }){
   // 0) conseguir el <svg> del preview frontal
   const svgEl = document.querySelector('#frontPreview svg');

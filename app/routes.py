@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, Response,jsonify,current_app, send_from_directory
+from flask import Blueprint,abort, render_template, request, redirect, url_for, flash, session, Response,jsonify,current_app, send_from_directory
 from .models import Producto,Categoria,oc_product_to_category, ProductDescription,Usuario, Model
 from app import db, socketio
 from sqlalchemy import func, exists
@@ -419,9 +419,26 @@ def svgs_to_glb(model_id):
     return render_template('helpers_admin/index1.html', front_img_url=front_img_url, temple_img_url=temple_img_url, 
         marco_url=marco_url,lentes_url=lentes_url,pat_url=pat_url, polarization_info=pol_info)
 
-@main.route("/_admin_helpers/glb_a_cara",methods=['GET'])
-def glb_a_cara():
-    return render_template('helpers_admin/index2.html')
+@main.route('/glb-a-cara/<int:model_id>', methods=['GET', 'POST'])
+def glb_a_cara(model_id):
+    ar_model = Model.query.get(model_id)
+    if not ar_model:
+        return jsonify({"ok": False, "error": "model_not_found"}), 404
+
+    if request.method == 'POST':
+        if not ar_model:
+            return jsonify({"ok": False, "error": "missing_model_id"}), 400
+        data = request.get_json(silent=True, force=True) or {}
+        ar_model.config_for_display = data
+        db.session.commit()
+        
+        return jsonify({
+            "ok": True,
+            "redirect": url_for('main.lente_detalle', lente_id=model_id)
+        })
+
+    # GET
+    return render_template('helpers_admin/index2.html', ar_model=ar_model)
 
 
 @main.route("/api/polarizar/<int:model_id>",methods=['GET'])
@@ -510,3 +527,12 @@ def api_seg_b_temple():
         })
     except Exception as e:
         return jsonify({"ok": False, "error": "proc_error", "detail": str(e)}), 500
+
+@main.route('/probar-lente/<int:model_id>')
+def probar_lente(model_id: int):
+    ar_model = Model.query.get_or_404(model_id)
+    if not ar_model.path_to_glb:
+        # Si no hay GLB cargado no tiene sentido esta vista
+        abort(404, description="El modelo no tiene GLB disponible")
+
+    return render_template('probar_lente.html', ar_model=ar_model)
