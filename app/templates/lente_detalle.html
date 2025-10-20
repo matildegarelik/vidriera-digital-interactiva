@@ -1,342 +1,75 @@
 {% extends 'layout.html' %}
+{% block css %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/editar_producto.css') }}">
+{% endblock %}
 
 {% block content %}
-<div class="container my-4">
-  <div class="d-flex justify-content-between align-items-center">
-    <h2>Editar Modelo AR #{{ ar_model.model_id }}</h2>
-    <div class="d-flex gap-2">
-      <button id="btnToggle" class="btn btn-outline-primary">
-        {% if ar_model.visible %}Ocultar{% else %}Mostrar{% endif %}
-      </button>
-      <button id="btnDelete" class="btn btn-outline-danger">Eliminar</button>
+<form 
+  method="POST" 
+  enctype="multipart/form-data"
+  action="{{ url_for('main.editar_lente', lente_id=ar_model.model_id) }}"
+>
+<input type="hidden" name="from_page" value="detalle">
+  <div class="container_general">
+    <div class="container_dentro">
+      <div class="barra_superior">
+        <h3>Editar producto</h3>
+        <a href="{{ url_for('main.home_admin') }}" class="btn btn-secondary">X</a>
+      </div>
+      <div class="contenido">
+        <div class="contenido_izquierda">
+          <div class="titulo_izquierda">
+            <h4>Imagen</h4>
+            <div class="form-check mb-3">
+              <input class="form-check-input" type="checkbox" name="visible" id="visibleCheck"
+                    {% if ar_model.visible %}checked{% endif %}>
+              <label class="form-check-label" for="visibleCheck">Visible</label>
+            </div>
+          </div>
+          <div class="imagen_costado">
+            {% if ar_model.path_to_img_front %}
+                <img src="/{{ ar_model.path_to_img_front }}" alt="Frente" class="img-fluid">
+              {% else %}
+                <span class="text-muted">Sin archivo</span>
+              {% endif %}
+          </div>
+          <div class="botones_izquierda">
+            <button class="boton_izq">Añadir</button>
+            <button class="boton_izq">Cambiar</button>
+            <a href="{{ url_for('main.lente_modelo', lente_id=ar_model.model_id) }}" class="boton_izq">Cambiar/agregar modelo</a>
+            <button class="boton_izq">Eliminar imagen</button>
+          </div>
+
+        </div>
+        <div class="contenido_derecha">
+          <h4>Características</h4>
+          <div class="mb-3">
+            <label class="form-label">Nombre</label>
+            <input type="text" name="name" class="form-control" value="{{ ar_model.name or '' }}">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Precio</label>
+            <input type="number" name="price" class="form-control"
+                  value="{{ ar_model.product.price or '' }}" step="0.01" min="0">
+          </div>
+
+          <div class="mb-3 descripcion-container">
+            <label class="form-label">Descripción</label>
+            <textarea name="description" class="form-control descripcion-textarea">{{ ar_model.description or '' }}</textarea>
+          </div>
+          <div class="d-flex gap-2">
+            <div class="botones_derecha">
+              <a href="{{ url_for('main.home_admin') }}" class="btn btn-secondary">Cancelar</a>
+              <button type="submit" class="btn btn-primary">Guardar cambios</button>
+          
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
-  <p class="text-muted mb-4">
-    Product ID asociado: <strong>{{ ar_model.product_id }}</strong>
-  </p>
-
-  <form method="POST" enctype="multipart/form-data"
-        action="{{ url_for('main.editar_lente', lente_id=ar_model.model_id) }}">
-
-    <!-- Visible + Nombre + Descripción -->
-    <div class="form-check mb-3">
-      <input class="form-check-input" type="checkbox" name="visible" id="visibleCheck"
-             {% if ar_model.visible %}checked{% endif %}>
-      <label class="form-check-label" for="visibleCheck">Visible</label>
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">Nombre</label>
-      <input type="text" name="name" class="form-control" value="{{ ar_model.name or '' }}">
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">Descripción</label>
-      <input type="text" name="description" class="form-control" value="{{ ar_model.description or '' }}">
-    </div>
-
-    <!-- Imágenes originales -->
-    <div class="row">
-      <h4>Imágenes originales</h4>
-
-      <!-- IMG: Frente -->
-      <div class="col">
-        <div class="card mb-3">
-          <div class="card-header">Imagen frente (original)</div>
-          <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
-            {% if ar_model.path_to_img_front %}
-              <img src="/{{ ar_model.path_to_img_front }}" alt="Frente" class="img-fluid">
-            {% else %}
-              <span class="text-muted">Sin archivo</span>
-            {% endif %}
-          </div>
-          <div class="card-footer">
-            <input type="file" name="path_to_img_front" class="form-control" accept="image/*">
-          </div>
-        </div>
-      </div>
-
-      <!-- IMG: Perfil -->
-      <div class="col">
-        <div class="card mb-3">
-          <div class="card-header">Imagen perfil (original)</div>
-          <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
-            {% if ar_model.path_to_img_side %}
-              <img src="/{{ ar_model.path_to_img_side }}" alt="Costado" class="img-fluid">
-            {% else %}
-              <span class="text-muted">Sin archivo</span>
-            {% endif %}
-          </div>
-          <div class="card-footer">
-            <input type="file" name="path_to_img_side" class="form-control" accept="image/*">
-          </div>
-        </div>
-      </div>
-
-      <!-- IMG: Fondo -->
-      <div class="col">
-        <div class="card mb-3">
-          <div class="card-header">Imagen fondo (original)</div>
-          <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
-            {% if ar_model.path_to_img_bg %}
-              <img src="/{{ ar_model.path_to_img_bg }}" alt="Fondo" class="img-fluid">
-            {% else %}
-              <span class="text-muted">Sin archivo</span>
-            {% endif %}
-          </div>
-          <div class="card-footer">
-            <input type="file" name="path_to_img_bg" class="form-control" accept="image/*">
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Imágenes aplanadas -->
-    <div class="row">
-      <h4>Imágenes aplanadas</h4>
-
-      <!-- IMG: Frente aplanada -->
-      <div class="col">
-        <div class="card mb-3">
-          <div class="card-header">Imagen frente (aplanada)</div>
-          <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
-            {% if ar_model.path_to_img_front_flattened %}
-              <img src="{{ '/' ~ ar_model.path_to_img_front_flattened.lstrip('/') }}" alt="Frente aplanada" class="img-fluid">
-            {% else %}
-
-              <span class="text-muted">Sin archivo</span>
-            {% endif %}
-          </div>
-          <div class="card-footer">
-            <input type="file" name="path_to_img_front_flattened" class="form-control" accept="image/*">
-          </div>
-        </div>
-      </div>
-
-      <!-- IMG: Perfil aplanada -->
-      <div class="col">
-        <div class="card mb-3">
-          <div class="card-header">Imagen perfil (aplanada)</div>
-          <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
-            {% if ar_model.path_to_img_side_flattened %}
-              <img src="{{ '/' ~ ar_model.path_to_img_side_flattened.lstrip('/') }}" alt="Perfil aplanada" class="img-fluid">
-            {% else %}
-              <span class="text-muted">Sin archivo</span>
-            {% endif %}
-          </div>
-          <div class="card-footer">
-            <input type="file" name="path_to_img_side_flattened" class="form-control" accept="image/*">
-          </div>
-        </div>
-      </div>
-
-      <!-- IMG: Patilla aplanada -->
-      <div class="col">
-        <div class="card mb-3">
-          <div class="card-header">Imagen patilla (aplanada)</div>
-          <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
-            {% if ar_model.path_to_img_temple_flattened %}
-              <img src="{{ '/' ~ ar_model.path_to_img_temple_flattened.lstrip('/') }}" alt="Patilla aplanada" class="img-fluid">
-            {% else %}
-              <span class="text-muted">Sin archivo</span>
-            {% endif %}
-          </div>
-          <div class="card-footer">
-            <input type="file" name="path_to_img_temple_flattened" class="form-control" accept="image/*">
-          </div>
-        </div>
-      </div>
-
-      <!-- IMG: Fondo aplanado -->
-      <div class="col">
-        <div class="card mb-3">
-          <div class="card-header">Imagen fondo (aplanado)</div>
-          <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
-            {% if ar_model.path_to_img_bg_flattened %}
-              <img src="{{ '/' ~ ar_model.path_to_img_temple_flattened.lstrip('/') }}" alt="Fondo aplanado" class="img-fluid">
-            {% else %}
-              <span class="text-muted">Sin archivo</span>
-            {% endif %}
-          </div>
-          <div class="card-footer">
-            <input type="file" name="path_to_img_bg_flattened" class="form-control" accept="image/*">
-          </div>
-        </div>
-      </div>
-
-      <div class="col-12 mb-3 text-end">
-        <a href="{{ url_for('main.aplanar_imagenes',model_id=ar_model.model_id) }}" target="_blank" class="btn btn-info text-light btn-block">Helper para generarlas</a>
-      </div>
-    </div>
-
-    <!-- SVGs: tres en la misma fila -->
-    <div class="row">
-      <h4>SVGs</h4>
-
-      <div class="col-md-4">
-        <div class="card mb-3 h-100">
-          <div class="card-header">SVG marco</div>
-          <div class="card-body text-center">
-            {% if ar_model.path_to_svg_frame %}
-              <div class="svg-preview-wrapper">
-                <img style="max-height:200px"
-                  src="{{ url_for('main.uploads', filename=(ar_model.path_to_svg_frame|replace('uploads/','')|trim('/'))) }}"
-                  alt="SVG marco"
-                  class="svg-preview-img">
-              </div>
-            {% else %}
-              <span class="text-muted">Sin archivo</span>
-            {% endif %}
-          </div>
-          <div class="card-footer">
-            <input type="file" name="path_to_svg_frame" class="form-control" accept=".svg,image/svg+xml">
-          </div>
-        </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="card mb-3 h-100">
-          <div class="card-header">SVG lentes</div>
-          <div class="card-body text-center">
-            {% if ar_model.path_to_svg_glasses %}
-              <div class="svg-preview-wrapper">
-                <img style="max-height:200px"
-                  src="{{ url_for('main.uploads', filename=(ar_model.path_to_svg_glasses|replace('uploads/','')|trim('/'))) }}"
-                  alt="SVG lentes"
-                  class="svg-preview-img">
-              </div>
-            {% else %}
-              <span class="text-muted">Sin archivo</span>
-            {% endif %}
-          </div>
-          <div class="card-footer">
-            <input type="file" name="path_to_svg_glasses" class="form-control" accept=".svg,image/svg+xml">
-          </div>
-        </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="card mb-3 h-100">
-          <div class="card-header">SVG patilla</div>
-          <div class="card-body text-center">
-            {% if ar_model.path_to_svg_temple %}
-              <div class="svg-preview-wrapper">
-                <img style="max-height:200px"
-                  src="{{ url_for('main.uploads', filename=(ar_model.path_to_svg_temple|replace('uploads/','')|trim('/'))) }}"
-                  alt="SVG patilla"
-                  class="svg-preview-img">
-              </div>
-            {% else %}
-              <span class="text-muted">Sin archivo</span>
-            {% endif %}
-          </div>
-          <div class="card-footer">
-            <input type="file" name="path_to_svg_temple" class="form-control" accept=".svg,image/svg+xml">
-          </div>
-        </div>
-      </div>
-
-      <div class="col-12 mb-3 text-end">
-        <a href="{{ url_for('main.imgs_to_svg', model_id=ar_model.model_id) }}" target="_blank" class="btn btn-info text-light btn-block">Helper para generarlos</a>
-      </div>
-    </div>
-
-
-    <!-- Modelo 3D -->
-    <div class="row">
-      <h4>Modelo 3D</h4>
-      <div class="col">
-        <div class="card mb-3">
-          <div class="card-header">Modelo 3D (.glb)</div>
-          <div class="card-body">
-            {% if ar_model.path_to_glb %}
-              <div class="mb-3">
-                <code class="d-block text-truncate">{{ ar_model.path_to_glb }}</code>
-              </div>
-
-              <!-- Preview GLB (chico, responsivo) -->
-              <div div class="border rounded bg-light" style="height:400px; overflow:hidden;">
-                <model-viewer
-                  src="{{ url_for('main.uploads',
-                          filename=(ar_model.path_to_glb or '')
-                                  |replace('\\','/')        
-                                  |replace('uploads/','')    
-                                  |trim('/') ) }}"
-                  camera-controls
-                  disable-zoom
-                  autoplay
-                  style="width:100%; height:100%;">
-                </model-viewer>
-              </div>
-            {% else %}
-              <span class="text-muted">Sin archivo</span>
-            {% endif %}
-          </div>
-          <div class="card-footer">
-            <input type="file" name="path_to_glb" class="form-control" accept=".glb,model/gltf-binary">
-          </div>
-        </div>
-      </div>
-      <div class="col-12 mb-3 text-end">
-        {% set sin_polar = (ar_model.polarization_info is none) or (ar_model.polarization_info == {}) %}
-        <a
-          href="{{ url_for('main.svgs_to_glb', model_id=ar_model.model_id) }}"
-          target="_blank"
-          class="btn btn-info text-light btn-block"
-          {% if sin_polar %}
-            onclick="return confirmarPolarizado(event,this)"
-            title="Recomendado: cargar polarizado antes"
-          {% endif %}
-        >
-          Helper para armarlo
-        </a>
-
-        {% if sin_polar %}
-          <small class="text-warning d-block mt-2">Sugerencia: completá y guardá la Información de Polarizado antes de armar el GLB.</small>
-        {% endif %}
-      </div>
-
-    </div>
-
-    <!-- JSONs -->
-    <h4>JSONs</h4>
-    <div class="row">
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Información polarizado (JSON)</label>
-        <textarea id="textareaPolarization" name="polarization_info" class="form-control" rows="6">
-          {{ ar_model.polarization_info|tojson if ar_model.polarization_info else '' }}
-        </textarea>
-        <div class="form-text">Pegá un JSON válido o usá el botón para completarlo desde la imagen aplanada.</div>
-
-        <div class="col-12 mb-3 d-grid">
-          <button
-            id="btnPolarizar"
-            type="button"
-            class="btn btn-info text-light"
-            data-model-id="{{ ar_model.model_id }}"
-            {% if not ar_model.path_to_img_front_flattened %}disabled{% endif %}
-            title="{% if not ar_model.path_to_img_front_flattened %}Subí primero la imagen frente aplanada{% endif %}">
-            Completar a partir de imagen aplanada
-          </button>
-        </div>
-      </div>
-
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Config for Display (JSON)</label>
-        <textarea name="config_for_display" class="form-control" rows="6">{{ ar_model.config_for_display|tojson if ar_model.config_for_display else '' }}</textarea>
-        <div class="form-text">Pegá un JSON válido o dejá vacío.</div>
-        <div class="col-12 mb-3">
-          <a href="{{ url_for('main.glb_a_cara',model_id=ar_model.model_id) }}" target="_blank" class="btn btn-info text-light btn-block">Helper para armarlo</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="d-flex gap-2">
-      <button type="submit" class="btn btn-primary">Guardar cambios</button>
-      <a href="{{ url_for('main.home_admin') }}" class="btn btn-secondary">Volver</a>
-    </div>
-  </form>
-</div>
+</form>
 
 <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 
