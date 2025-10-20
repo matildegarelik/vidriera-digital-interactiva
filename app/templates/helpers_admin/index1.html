@@ -38,6 +38,13 @@
     <div class="grp">
       <label>Escala lentes</label>
       <input id="glassScale" type="range" min="0.6" max="1.6" step="0.01" value="1.00">
+      <label>Lentes Offset X</label>
+      <input id="lensOffsetX" type="range" min="-0.1" max="0.1" step="0.001" value="0.0">
+      <label>Lentes Offset Y</label>
+      <input id="lensOffsetY" type="range" min="-0.1" max="0.1" step="0.001" value="0.0">
+      <label>Lentes Offset Z (Prof.)</label>
+      <input id="lensOffsetZ" type="range" min="-0.02" max="0.02" step="0.001" value="0.0">
+      
     </div>
 
 
@@ -368,6 +375,9 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
 // ---- 3D setup ----
 const ui = {
   glassScale: document.getElementById('glassScale'),
+  lensOffsetX: document.getElementById('lensOffsetX'),
+  lensOffsetY: document.getElementById('lensOffsetY'),
+  lensOffsetZ: document.getElementById('lensOffsetZ'),
   hingeX: document.getElementById('hingeX'),
   hingeY: document.getElementById('hingeY'),
   hingeZ: document.getElementById('hingeZ'),
@@ -398,6 +408,8 @@ new ResizeObserver(resize).observe(canvas);
 const assembled = new THREE.Group(); scene.add(assembled);
 let marco=null, patillaL=null, patillaR=null;
 let lensPivotL=null, lensPivotR=null; let lensMeshes=[];
+let lensOriginalPosL = new THREE.Vector3();
+let lensOriginalPosR = new THREE.Vector3();
 
 function alignLensesMidpointToFrame(){
   if (!marco) return;
@@ -438,11 +450,23 @@ function fitCameraToObject(obj, offset=1.25){
   camera.lookAt(center); controls.target.copy(center);
 }
 
-function positionGlasses(){
-  const s = parseFloat(ui.glassScale.value);
-  if (lensPivotL) lensPivotL.scale.set(s, s, s);
-  if (lensPivotR) lensPivotR.scale.set(s, s, s);
-}
+
+  function updateLensTransforms(){
+    const s = parseFloat(ui.glassScale.value);
+    const x = parseFloat(ui.lensOffsetX.value);
+    const y = parseFloat(ui.lensOffsetY.value);
+    const z = parseFloat(ui.lensOffsetZ.value);
+    const offset = new THREE.Vector3(x, y, z);
+
+    if (lensPivotL) {
+      lensPivotL.scale.set(s, s, s);
+      lensPivotL.position.copy(lensOriginalPosL).add(offset);
+    }
+    if (lensPivotR) {
+      lensPivotR.scale.set(s, s, s);
+      lensPivotR.position.copy(lensOriginalPosR).add(offset);
+    }
+  }
 
 function positionPatillas(){
   if(!patillaL||!patillaR||!marco) return;
@@ -590,10 +614,12 @@ async function buildModel(){
     left.mesh.position.sub(left.center);
     lensPivotL.position.copy(left.center);
     lensPivotL.add(left.mesh);
+    lensOriginalPosL.copy(left.center);
  
     right.mesh.position.sub(right.center);
     lensPivotR.position.copy(right.center);
     lensPivotR.add(right.mesh);
+    lensOriginalPosR.copy(right.center);
  
     // asignar extras al pivot más cercano en X
     for (const e of extras) {
@@ -616,7 +642,7 @@ async function buildModel(){
   const { L, R } = clonePatillasAlways(base, { mirrorRight:true });
   patillaL=L; patillaR=R; assembled.add(patillaL, patillaR);
 
-  alignLensesMidpointToFrame(); positionGlasses(); 
+  alignLensesMidpointToFrame(); updateLensTransforms(); 
   positionPatillas(); fitCameraToObject(assembled);
 }
 
@@ -625,14 +651,13 @@ ui.build.onclick = async ()=> {
   try { await buildModel(); }
   finally { setLoading(false); }
 };
-ui.fit.onclick   = ()=> { if(assembled.children.length) fitCameraToObject(assembled); };
 ['input','change'].forEach(ev=>{
   ['hingeX','hingeY','hingeZ','rotPat','scalePat']
     .forEach(id=>document.getElementById(id).addEventListener(ev, positionPatillas));
-  ['glassScale']
-    .forEach(id=>document.getElementById(id).addEventListener(ev, positionGlasses));
-});
 
+  ['glassScale', 'lensOffsetX', 'lensOffsetY', 'lensOffsetZ']
+    .forEach(id=>document.getElementById(id).addEventListener(ev, updateLensTransforms));
+});
 
 // Carga de los 3 SVGs
 const readText = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsText(f); });
