@@ -190,39 +190,75 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
   };
   const S = 0.002; // px -> m  (Y invertida)
 
-  const invS = 1 / S;
-  function applyPlanarUV(geom){
+ // [DENTRO DE index1.html]
+
+  const invS = 1 / S; //
+
+  // --- REEMPLAZAR ESTA FUNCIÓN ENTERA ---
+  function applyPlanarUV(geom, role = 'generic') {
     let minX, maxX, minY, maxY;
-    if (svgVB) {
-      minX = svgVB.minX; maxX = svgVB.maxX;
-      minY = svgVB.minY; maxY = svgVB.maxY;
-    } else if (refBox) {
-      minX = refBox.min.x; maxX = refBox.max.x;
-      minY = refBox.min.y; maxY = refBox.max.y;
-    } else {
-      geom.computeBoundingBox();
-      const bb = geom.boundingBox;
-      minX = bb.min.x * invS; maxX = bb.max.x * invS;
-      minY = bb.min.y * invS; maxY = bb.max.y * invS;
-    }
-    const W = Math.max(1e-6, maxX - minX);
-    const H = Math.max(1e-6, maxY - minY);
+    let W, H;
 
     const pos = geom.attributes.position;
     const uv  = new THREE.BufferAttribute(new Float32Array(pos.count * 2), 2);
-    for (let i=0; i<pos.count; i++){
-      const xPx =  pos.getX(i) * invS;
-      const yPx = -pos.getY(i) * invS;
-      const u = (xPx - minX) / W;
-      const v = 1 - (yPx - minY) / H;
-      uv.setXY(i, u, v);
+
+    if (role === 'glass') {
+      // --- LÓGICA SOLO PARA LENTES ---
+      // 1. Usar la caja de la geometría actual.
+      geom.computeBoundingBox();
+      const bb = geom.boundingBox;
+
+      // 2. Las 'pos' ya están en metros (escaladas por S). NO usamos 'invS'.
+      //    Y en three.js, +Y es arriba, -Y es abajo.
+      minX = bb.min.x; maxX = bb.max.x;
+      minY = bb.min.y; maxY = bb.max.y; // minY es abajo, maxY es arriba
+
+      W = Math.max(1e-6, maxX - minX);
+      H = Math.max(1e-6, maxY - minY);
+
+      // DEBUG:
+      console.log('DEBUG (LENTE): H =', H, 'minY =', minY, 'maxY =', maxY);
+
+      // 3. Generar UVs
+      for (let i=0; i<pos.count; i++){
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const u = (x - minX) / W;
+        const v = (y - minY) / H; // v=0 (abajo) a v=1 (arriba)
+        uv.setXY(i, u, v);
+      }
+
+    } else {
+      // --- LÓGICA ORIGINAL PARA MARCO/PATILLA (con foto) ---
+      if (svgVB) { //
+        minX = svgVB.minX; maxX = svgVB.maxX;
+        minY = svgVB.minY; maxY = svgVB.maxY;
+      } else if (refBox) { //
+        minX = refBox.min.x; maxX = refBox.max.x;
+        minY = refBox.min.y; maxY = refBox.max.y;
+      } else { //
+        geom.computeBoundingBox();
+        const bb = geom.boundingBox;
+        minX = bb.min.x * invS; maxX = bb.max.x * invS;
+        minY = bb.min.y * invS; maxY = bb.max.y * invS;
+      }
+
+      W = Math.max(1e-6, maxX - minX);
+      H = Math.max(1e-6, maxY - minY);
+
+      for (let i=0; i<pos.count; i++){
+        const xPx =  pos.getX(i) * invS;
+        const yPx = -pos.getY(i) * invS; // Y de SVG (Y=0 es arriba)
+        const u = (xPx - minX) / W;
+        const v = 1 - (yPx - minY) / H; // v=1 (arriba) a v=0 (abajo)
+        uv.setXY(i, u, v);
+      }
     }
+
     geom.setAttribute('uv', uv);
     geom.attributes.uv.needsUpdate = true;
   }
-
-
-
+  // --- FIN DEL REEMPLAZO ---
   // material base (map SIEMPRE si viene tex)
   const baseMat = new THREE.MeshStandardMaterial({
     color: tex ? 0xffffff : color,
@@ -265,7 +301,7 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
     const geom = new THREE.ExtrudeGeometry(whiteShapes, opts);
     geom.scale(S, -S, S);
     geom.computeVertexNormals();
-    applyPlanarUV(geom);
+    applyPlanarUV(geom, role);
 
     const mesh = new THREE.Mesh(geom, baseMat.clone());
     group.add(mesh);
@@ -298,7 +334,7 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
 
       const g = new THREE.ExtrudeGeometry(shape, opts);
       g.scale(S,-S,S); g.computeVertexNormals();
-      applyPlanarUV(g);
+      applyPlanarUV(g,role);
       group.add(new THREE.Mesh(g, baseMat.clone()));
     }
   }
@@ -319,7 +355,7 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
     if (best) {
       const g=new THREE.ExtrudeGeometry(best, opts);
       g.scale(S,-S,S); g.computeVertexNormals();
-      applyPlanarUV(g);
+      applyPlanarUV(g,role);
       group.add(new THREE.Mesh(g, baseMat.clone()));
     }
   }
