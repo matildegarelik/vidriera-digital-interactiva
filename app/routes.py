@@ -217,10 +217,18 @@ def editar_lente(lente_id: int):
     if not ar:
         flash('Modelo no encontrado')
         return redirect(url_for('main.home_admin'))
-    # Campos simples
-    ar.name = request.form.get('name') or None
-    ar.description = request.form.get('description') or None
-    ar.visible = bool(request.form.get('visible', 'on'))
+    
+    origen = request.form.get('from_page')
+
+    # Solo actualizar los campos de texto si vino desde "detalle"
+    if origen == 'detalle':
+        ar.name = request.form.get('name') or None
+        ar.description = request.form.get('description') or None
+        ar.visible = bool(request.form.get('visible', 'on'))
+        price = request.form.get('price', type=float)
+        if price is not None and ar.product:
+            ar.product.price = price
+
 
     # Archivos -> si llega uno nuevo, borra el anterior y guarda el nuevo
     _maybe_replace(request,lente_id,ar, 'path_to_img_front',              "imgs/front",            'path_to_img_front')
