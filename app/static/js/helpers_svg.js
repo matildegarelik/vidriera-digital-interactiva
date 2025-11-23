@@ -98,11 +98,27 @@ const ui = {
   sideFile : document.getElementById('sideFile'),
   closeR   : document.getElementById('closeR'),
   minArea  : document.getElementById('minArea'),
+  erodeStrength: document.getElementById('erodeStrength'),
+  distThreshold: document.getElementById('distThreshold'),
+  satThreshold: document.getElementById('satThreshold'),
+  bottomCrop: document.getElementById('bottomCrop'),
+  leftCrop: document.getElementById('leftCrop'),
+  rightCrop: document.getElementById('rightCrop'),
+  innerAdjust: document.getElementById('innerAdjust'),
   closeRSide: document.getElementById('closeRSide'),
   minAreaSide: document.getElementById('minAreaSide'),
+  // value displays
+  closeRVal: document.getElementById('closeRVal'),
+  minAreaVal: document.getElementById('minAreaVal'),
+  erodeStrengthVal: document.getElementById('erodeStrengthVal'),
+  distThresholdVal: document.getElementById('distThresholdVal'),
+  satThresholdVal: document.getElementById('satThresholdVal'),
+  bottomCropVal: document.getElementById('bottomCropVal'),
+  leftCropVal: document.getElementById('leftCropVal'),
+  rightCropVal: document.getElementById('rightCropVal'),
+  innerAdjustVal: document.getElementById('innerAdjustVal'),
   // masks
   mGray:  document.getElementById('mGray'),
-  mEdges: document.getElementById('mEdges'),
   mSil:   document.getElementById('mSil'),
   mInner: document.getElementById('mInner'),
   // previews
@@ -127,12 +143,80 @@ let lastFrameSVG = '';
 let lastGlassSVG = '';
 let lastTempleSVG = '';
 
+// Función para crear preview del marco sobre la foto (multiplicación binaria)
+async function createFramePreview(photoSrc, maskSrc) {
+  const canvas = document.getElementById('framePreviewCanvas');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+
+  // Cargar imagen y máscara
+  const [photo, mask] = await Promise.all([
+    loadImage(photoSrc),
+    loadImage(maskSrc)
+  ]);
+
+  // Configurar canvas al tamaño de la imagen
+  canvas.width = photo.width;
+  canvas.height = photo.height;
+
+  // Crear canvas temporal para la máscara
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = photo.width;
+  tempCanvas.height = photo.height;
+  const tempCtx = tempCanvas.getContext('2d');
+
+  // Dibujar foto en el canvas principal
+  ctx.drawImage(photo, 0, 0);
+
+  // Dibujar máscara en canvas temporal
+  tempCtx.drawImage(mask, 0, 0);
+
+  // Obtener los datos de píxeles
+  const photoData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const maskData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
+
+  // Multiplicación binaria: foto × máscara (píxel por píxel)
+  for (let i = 0; i < photoData.data.length; i += 4) {
+    // La máscara es binaria: blanco (255) = mostrar, negro (0) = ocultar
+    const maskValue = maskData.data[i]; // canal R de la máscara (es grayscale)
+
+    if (maskValue === 0) {
+      // Si la máscara es negra (0), poner píxel en negro
+      photoData.data[i] = 0;     // R
+      photoData.data[i + 1] = 0; // G
+      photoData.data[i + 2] = 0; // B
+      // Alpha se mantiene en 255
+    }
+    // Si la máscara es blanca (255), mantener el píxel de la foto
+  }
+
+  // Escribir los datos modificados de vuelta al canvas
+  ctx.putImageData(photoData, 0, 0);
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
 // ---------- FRONT: pedir al back y mostrar ----------
 async function requestFront(){
   const fd = new FormData();
   fd.append('model_id', MODEL_ID ?? '');
   fd.append('close_r', ui.closeR.value);
   fd.append('min_area', ui.minArea.value);
+  fd.append('erode_strength', ui.erodeStrength.value);
+  fd.append('dist_threshold', ui.distThreshold.value);
+  fd.append('sat_threshold', ui.satThreshold.value);
+  fd.append('bottom_crop_pct', ui.bottomCrop.value);
+  fd.append('left_crop_pct', ui.leftCrop.value);
+  fd.append('right_crop_pct', ui.rightCrop.value);
+  fd.append('inner_adjust_px', ui.innerAdjust.value);
   if (ui.frontFile.files?.[0]) fd.append('image', ui.frontFile.files[0]);
 
   setLoading(true);
@@ -142,9 +226,15 @@ async function requestFront(){
 
     // masks
     ui.mGray.src  = j.masks?.gray  || '';
-    ui.mEdges.src = j.masks?.edges || '';
     ui.mSil.src   = j.masks?.sil   || '';
     ui.mInner.src = j.masks?.inner || '';
+
+    // Preview del marco con foto
+    if (j.masks?.gray && j.masks?.frame_mask) {
+      createFramePreview(j.masks.gray, j.masks.frame_mask).catch(e => {
+        console.warn('Error creando preview del marco:', e);
+      });
+    }
 
     // svgs
     lastFrameSVG = normalizeFrameSVGWhite(j.svgs?.frame || j.svgs?.frame_svg || '');
@@ -158,6 +248,17 @@ async function requestFront(){
   }
 }
 ui.btnFrontUpdate.addEventListener('click', ()=>requestFront());
+
+// Update value displays
+ui.closeR.addEventListener('input', ()=> ui.closeRVal.textContent = ui.closeR.value);
+ui.minArea.addEventListener('input', ()=> ui.minAreaVal.textContent = ui.minArea.value);
+ui.erodeStrength.addEventListener('input', ()=> ui.erodeStrengthVal.textContent = ui.erodeStrength.value);
+ui.distThreshold.addEventListener('input', ()=> ui.distThresholdVal.textContent = ui.distThreshold.value);
+ui.satThreshold.addEventListener('input', ()=> ui.satThresholdVal.textContent = ui.satThreshold.value);
+ui.bottomCrop.addEventListener('input', ()=> ui.bottomCropVal.textContent = ui.bottomCrop.value);
+ui.leftCrop.addEventListener('input', ()=> ui.leftCropVal.textContent = ui.leftCrop.value);
+ui.rightCrop.addEventListener('input', ()=> ui.rightCropVal.textContent = ui.rightCrop.value);
+ui.innerAdjust.addEventListener('input', ()=> ui.innerAdjustVal.textContent = ui.innerAdjust.value);
 
 // ---------- TEMPLE: pedir al back y mostrar ----------
 async function requestTemple(){

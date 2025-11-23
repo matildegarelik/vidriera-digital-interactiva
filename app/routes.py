@@ -195,7 +195,7 @@ def agregar_lente():
 
 @main.route('/lente/<int:lente_id>')
 def lente_detalle(lente_id):
-    ar_model = Model.query.get(lente_id)
+    ar_model = db.session.get(Model, lente_id)
 
     if not ar_model:
         flash('Modelo no encontrado')
@@ -213,7 +213,7 @@ def _loads_or_none(texto: str):
 
 @main.route('/lente/<int:lente_id>', methods=['POST'])
 def editar_lente(lente_id: int):
-    ar = Model.query.get(lente_id)
+    ar = db.session.get(Model, lente_id)
     if not ar:
         flash('Modelo no encontrado')
         return redirect(url_for('main.home_admin'))
@@ -256,7 +256,7 @@ def editar_lente(lente_id: int):
 
 @main.route('/toggle_visible/<int:lente_id>', methods=['POST'])
 def toggle_visible(lente_id):
-    modelo = Model.query.get(lente_id)
+    modelo = db.session.get(Model, lente_id)
     if not modelo:
         return {'success': False}
 
@@ -280,7 +280,9 @@ def delete_lente(lente_id):
 @main.route('/lente_modelo/<int:lente_id>', methods=['GET', 'POST'])
 def lente_modelo(lente_id):
     # Traer el modelo correspondiente
-    ar_model = Model.query.get_or_404(lente_id)
+    ar_model = db.session.get(Model, lente_id)
+    if not ar_model:
+        abort(404)
 
     if request.method == 'POST':
         # Acá procesás el formulario para cambiar o agregar el modelo 3D
@@ -299,7 +301,9 @@ def lente_modelo(lente_id):
 
 @main.route("/_admin_helpers/aplanar_imagenes/<int:model_id>",methods=['GET','POST'])
 def aplanar_imagenes(model_id):
-    m = Model.query.get_or_404(model_id)
+    m = db.session.get(Model, model_id)
+    if not m:
+        abort(404)
 
     if request.method == 'POST':
         root = current_app.config['UPLOAD_FOLDER']
@@ -347,7 +351,9 @@ def aplanar_imagenes(model_id):
 
 @main.route("/_admin_helpers/imgs_to_svg/<int:model_id>", methods=['GET', 'POST'])
 def imgs_to_svg(model_id):
-    m = Model.query.get_or_404(model_id)
+    m = db.session.get(Model, model_id)
+    if not m:
+        abort(404)
 
     if request.method == 'POST':
         root = current_app.config['UPLOAD_FOLDER']
@@ -394,7 +400,9 @@ def imgs_to_svg(model_id):
 
 @main.route("/_admin_helpers/svgs_to_glb/<int:model_id>", methods=['GET', 'POST'])
 def svgs_to_glb(model_id):
-    m = Model.query.get_or_404(model_id)
+    m = db.session.get(Model, model_id)
+    if not m:
+        abort(404)
 
     if request.method == 'POST':
         glb_fs = request.files.get('glb')
@@ -433,7 +441,7 @@ def svgs_to_glb(model_id):
 
 @main.route('/glb-a-cara/<int:model_id>', methods=['GET', 'POST'])
 def glb_a_cara(model_id):
-    ar_model = Model.query.get(model_id)
+    ar_model = db.session.get(Model, model_id)
     if not ar_model:
         return jsonify({"ok": False, "error": "model_not_found"}), 404
 
@@ -454,7 +462,9 @@ def glb_a_cara(model_id):
 
 @main.route("/api/polarizar/<int:model_id>",methods=['GET'])
 def api_polarizar(model_id):
-    m = Model.query.get_or_404(model_id)
+    m = db.session.get(Model, model_id)
+    if not m:
+        abort(404)
     front_img_url  = url_for('main.uploads', filename=norm(m.path_to_img_front_flattened))  if m.path_to_img_front_flattened  else ''
     bg_img_url  = url_for('main.uploads', filename=norm(m.path_to_img_bg_flattened))  if m.path_to_img_bg_flattened  else None
     res = caracterizar_lente_reducida(front_img_url[1:], bg_img_url[1:])
@@ -470,14 +480,28 @@ def api_seg_b_front():
     Parámetros (form-data):
       - close_r (int)
       - min_area (int)
+      - erode_strength (float): multiplicador de erosión (default 1.0)
+      - dist_threshold (float): umbral distance transform (default 2.0)
+      - sat_threshold (int): umbral de saturación (default 35)
+      - bottom_crop_pct (float): porcentaje inferior a recortar (default 0.0)
+      - left_crop_pct (float): porcentaje lateral izquierdo (default 0.0)
+      - right_crop_pct (float): porcentaje lateral derecho (default 0.0)
+      - inner_adjust_px (int): ajuste borde interior en píxeles (default 0)
       - image (File) opcional para reemplazar la precargada
     """
     close_r  = request.form.get('close_r', default=10, type=int)
     min_area = request.form.get('min_area', default=1200, type=int)
+    erode_strength = request.form.get('erode_strength', default=1.0, type=float)
+    dist_threshold = request.form.get('dist_threshold', default=2.0, type=float)
+    sat_threshold = request.form.get('sat_threshold', default=35, type=int)
+    bottom_crop_pct = request.form.get('bottom_crop_pct', default=0.0, type=float)
+    left_crop_pct = request.form.get('left_crop_pct', default=0.0, type=float)
+    right_crop_pct = request.form.get('right_crop_pct', default=0.0, type=float)
+    inner_adjust_px = request.form.get('inner_adjust_px', default=0, type=int)
     upload_fs = request.files.get('image')
     model_id = request.form.get('model_id')
 
-    m = Model.query.get(model_id)
+    m = db.session.get(Model, model_id)
     img = _load_model_image_or_upload(
         m,
         'path_to_img_front_flattened',
@@ -488,7 +512,18 @@ def api_seg_b_front():
         return jsonify({"ok": False, "error": "no_image"}), 400
 
     try:
-        out = _front_segmentation_vb(img, close_r=close_r, min_area=min_area)
+        out = _front_segmentation_vb(
+            img,
+            close_r=close_r,
+            min_area=min_area,
+            erode_strength=erode_strength,
+            dist_threshold=dist_threshold,
+            sat_threshold=sat_threshold,
+            bottom_crop_pct=bottom_crop_pct,
+            left_crop_pct=left_crop_pct,
+            right_crop_pct=right_crop_pct,
+            inner_adjust_px=inner_adjust_px
+        )
         return jsonify({
             "ok": True,
             "masks": {
@@ -496,6 +531,7 @@ def api_seg_b_front():
                 "edges": out["edges"],
                 "sil":   out["sil"],
                 "inner": out["inner"],
+                "frame_mask": out["frame_mask"],  # Máscara PNG del marco para preview
             },
             "svgs": {
                 "frame":  out["svg_frame"],
@@ -519,7 +555,7 @@ def api_seg_b_temple():
     upload_fs = request.files.get('image')
     model_id = request.form.get('model_id')
 
-    m = Model.query.get(model_id)
+    m = db.session.get(Model, model_id)
     img = _load_model_image_or_upload(
         m,
         'path_to_img_temple_flattened',
@@ -541,7 +577,9 @@ def api_seg_b_temple():
 
 @main.route('/probar-lente/<int:model_id>')
 def probar_lente(model_id: int):
-    ar_model = Model.query.get_or_404(model_id)
+    ar_model = db.session.get(Model, model_id)
+    if not ar_model:
+        abort(404)
     if not ar_model.path_to_glb:
         # Si no hay GLB cargado no tiene sentido esta vista
         abort(404, description="El modelo no tiene GLB disponible")

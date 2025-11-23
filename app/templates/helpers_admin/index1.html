@@ -39,9 +39,9 @@
       <label>Escala lentes</label>
       <input id="glassScale" type="range" min="0.6" max="1.6" step="0.01" value="1.00">
       <label>Lentes Offset X</label>
-      <input id="lensOffsetX" type="range" min="-0.1" max="0.1" step="0.001" value="0.0">
+      <input id="lensOffsetX" type="range" min="-10" max="10" step="0.001" value="0.0">
       <label>Lentes Offset Y</label>
-      <input id="lensOffsetY" type="range" min="-0.1" max="0.1" step="0.001" value="0.0">
+      <input id="lensOffsetY" type="range" min="-10" max="10" step="0.001" value="0.0">
       <label>Lentes Offset Z (Prof.)</label>
       <input id="lensOffsetZ" type="range" min="-0.02" max="0.02" step="0.001" value="0.0">
       
@@ -548,9 +548,10 @@ async function buildModel(){
     role: 'glass'
   });
 
-  // Polarizado 
+  // Polarizado
   try {
     if (POL?.alpha_rows?.length) {
+      // Lentes con tinte/polarizado (lentes de sol)
       const tintHex = bgrToHex(POL.tinte_BGR || [0,0,0]);
       const texRGBA = makeTintRGBAFromAlphaRows(512, tintHex, POL.alpha_rows);
       texRGBA.colorSpace = THREE.SRGBColorSpace;
@@ -566,6 +567,24 @@ async function buildModel(){
       glassGroup.traverse(o => {
         if (o.isMesh) {
           o.material = glassMat;
+          o.renderOrder = 2;
+        }
+      });
+    } else {
+      // Lentes transparentes (cristales claros sin polarizado)
+      const clearGlassMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.15,          // Muy sutil, casi invisible
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        metalness: 0.0,
+        roughness: 0.05,        // Más suave para simular vidrio
+        envMapIntensity: 1.0
+      });
+      glassGroup.traverse(o => {
+        if (o.isMesh) {
+          o.material = clearGlassMat;
           o.renderOrder = 2;
         }
       });

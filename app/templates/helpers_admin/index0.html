@@ -33,12 +33,52 @@
       </div>
       <div class="row">
         <div style="flex:1">
-          <label>Cierre (radio)</label>
+          <label>Cierre (radio) <span id="closeRVal">10</span></label>
           <input id="closeR" type="range" min="2" max="40" step="1" value="10" />
         </div>
         <div style="flex:1">
-          <label>Mín área</label>
+          <label>Mín área <span id="minAreaVal">1200</span></label>
           <input id="minArea" type="range" min="200" max="8000" step="100" value="1200" />
+        </div>
+      </div>
+      <div class="row">
+        <div style="flex:1">
+          <label>Fuerza erosión <span id="erodeStrengthVal">1.0</span></label>
+          <input id="erodeStrength" type="range" min="0.3" max="2.5" step="0.1" value="1.0" />
+        </div>
+        <div style="flex:1">
+          <label>Umbral distancia <span id="distThresholdVal">2.0</span></label>
+          <input id="distThreshold" type="range" min="0.5" max="8.0" step="0.5" value="2.0" />
+        </div>
+      </div>
+      <div class="row">
+        <div style="flex:1">
+          <label>Umbral saturación <span id="satThresholdVal">35</span></label>
+          <input id="satThreshold" type="range" min="10" max="100" step="5" value="35" />
+        </div>
+      </div>
+      <h4>Recortes adaptativos</h4>
+      <div class="row">
+        <div style="flex:1">
+          <label>Recorte inferior (%) <span id="bottomCropVal">0</span></label>
+          <input id="bottomCrop" type="range" min="0" max="100" step="1" value="0" />
+        </div>
+      </div>
+      <div class="row">
+        <div style="flex:1">
+          <label>Recorte izquierdo (%) <span id="leftCropVal">0</span></label>
+          <input id="leftCrop" type="range" min="0" max="50" step="1" value="0" />
+        </div>
+        <div style="flex:1">
+          <label>Recorte derecho (%) <span id="rightCropVal">0</span></label>
+          <input id="rightCrop" type="range" min="0" max="50" step="1" value="0" />
+        </div>
+      </div>
+      <div class="row">
+        <div style="flex:1">
+          <label>Ajuste interior (px) <span id="innerAdjustVal">0</span></label>
+          <input id="innerAdjust" type="range" min="-30" max="30" step="1" value="0" />
+          <small style="color:#888; font-size:11px;">+ = más marco, - = más lente</small>
         </div>
       </div>
       <div class="row">
@@ -96,12 +136,14 @@
     <h3>Máscaras (servidor)</h3>
     <div class="row">
       <div class="col-md" style="flex:1">
-        <h4>Gray</h4>
+        <h4>Foto original</h4>
         <div class="mask"><img id="mGray" alt=""></div>
       </div>
       <div class="col-md" style="flex:1">
-        <h4>Edges</h4>
-        <div class="mask"><img id="mEdges" alt=""></div>
+        <h4>Preview Marco (con foto)</h4>
+        <div class="mask" style="position:relative; background:#000; display:grid; place-items:center;">
+          <canvas id="framePreviewCanvas" style="max-width:100%; max-height:260px; width:auto; height:auto; display:block;"></canvas>
+        </div>
       </div>
     </div>
     <div class="row" style="margin-top:10px">

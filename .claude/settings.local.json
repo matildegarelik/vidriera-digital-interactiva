@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir C:UsersusuarioDocumentsvidriera-digital-interactivaapp /s /b 2)",
+      "Bash(nul)",
+      "Bash(find:*)",
+      "Bash(cat:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -399,7 +399,8 @@ def _keep_two_largest_components(mask_bin):
     out[np.isin(lbl, list(keep))] = 255
     return out
 
-def _front_segmentation_vb(img_bgr, close_r=10, min_area=1200):
+def _front_segmentation_vb(img_bgr, close_r=10, min_area=1200, erode_strength=1.0, dist_threshold=2.0, sat_threshold=35,
+                           bottom_crop_pct=0.0, left_crop_pct=0.0, right_crop_pct=0.0, inner_adjust_px=0):
     """
     Segmentación robusta vB:
       - edges: Canny "suave" + close
@@ -407,6 +408,16 @@ def _front_segmentation_vb(img_bgr, close_r=10, min_area=1200):
       - interior (vidrios): erosión adaptada + distance transform
       - marco = silueta - interior
       - lentes = interior (quedarse con 2 mayores)
+
+    Parámetros nuevos:
+      - erode_strength: multiplicador de la erosión (1.0 = normal, >1 = más agresivo, <1 = menos)
+      - dist_threshold: umbral del distance transform (default 2.0 px)
+      - sat_threshold: umbral de saturación para decidir tipo de marco (default 35)
+      - bottom_crop_pct: porcentaje inferior a eliminar (0-100%, adaptativo a la forma)
+      - left_crop_pct: porcentaje lateral izquierdo a eliminar (0-50%, adaptativo)
+      - right_crop_pct: porcentaje lateral derecho a eliminar (0-50%, adaptativo)
+      - inner_adjust_px: ajuste del borde interior en píxeles (+ = más marco/menos lente, - = menos marco/más lente)
+
     Devuelve dict con máscaras y SVGs.
     """
     h, w = img_bgr.shape[:2]
@@ -440,7 +451,7 @@ def _front_segmentation_vb(img_bgr, close_r=10, min_area=1200):
             svg_lenses=_mask_to_svg(np.zeros_like(sil)),
         )
 
-    # interior vidrios: erosión adaptativa por componente (como tu idea original)
+    # interior vidrios: erosión adaptativa por componente
     num, lbl, st, _ = cv.connectedComponentsWithStats((sil > 0).astype(np.uint8), 8)
     inner = np.zeros_like(sil)
     HSV = cv.cvtColor(img_bgr, cv.COLOR_BGR2HSV)
@@ -450,10 +461,11 @@ def _front_segmentation_vb(img_bgr, close_r=10, min_area=1200):
         # tamaño del struct elem en función del tamaño del componente
         w_c = st[lb, cv.CC_STAT_WIDTH]
         h_c = st[lb, cv.CC_STAT_HEIGHT]
-        # saturación para decidir cuánto erosionar
+        # saturación para decidir cuánto erosionar (ahora configurable)
         med_sat = float(np.median(S[comp > 0])) if (comp > 0).any() else 0.0
-        r_pct = 0.05 if med_sat >= 35 else 0.09
-        r = max(3, int(r_pct * min(w_c, h_c)))
+        r_pct = 0.05 if med_sat >= sat_threshold else 0.09
+        # Aplicar multiplicador de erosión
+        r = max(3, int(r_pct * min(w_c, h_c) * erode_strength))
         ker = cv.getStructuringElement(cv.MORPH_ELLIPSE, (4*r+2, 4*r+2))
         core = cv.erode(comp, ker, 1)
         inner = cv.bitwise_or(inner, core)
@@ -463,9 +475,9 @@ def _front_segmentation_vb(img_bgr, close_r=10, min_area=1200):
     inner = cv.morphologyEx(inner, cv.MORPH_OPEN, np.ones((3, 3), np.uint8))
     inner = cv.morphologyEx(inner, cv.MORPH_CLOSE, np.ones((9, 9), np.uint8))
 
-    # adelgazar bordes y quedarnos con "zonas interiores" reales
+    # adelgazar bordes y quedarnos con "zonas interiores" reales (umbral configurable)
     dist = cv.distanceTransform((inner > 0).astype(np.uint8), cv.DIST_L2, 5)
-    inner = (dist > 2).astype(np.uint8) * 255
+    inner = (dist > dist_threshold).astype(np.uint8) * 255
 
     # lentes = 2 componentes más grandes
     lenses = _keep_two_largest_components(inner)
@@ -473,11 +485,101 @@ def _front_segmentation_vb(img_bgr, close_r=10, min_area=1200):
     # marco = silueta - lentes
     frame = cv.bitwise_and(sil, cv.bitwise_not(lenses))
 
+    # Recorte inferior adaptativo (sigue la forma curva del marco)
+    # IMPORTANTE: recortar columna por columna para seguir la curvatura
+    if bottom_crop_pct > 0:
+        crop_pct = min(100.0, max(0.0, float(bottom_crop_pct)))  # limitar entre 0-100%
+
+        # Encontrar el bounding box del contenido (silueta)
+        ys, xs = np.where(sil > 0)
+        if len(ys) > 0:
+            # Límites del contenido
+            y_min, y_max = int(ys.min()), int(ys.max())
+            content_height = y_max - y_min
+
+            # Calcular cuántos píxeles recortar
+            crop_pixels = int(content_height * (crop_pct / 100.0))
+
+            if crop_pixels > 0:
+                # Crear máscara de recorte adaptativo
+                # Para cada columna, encontrar el píxel blanco más bajo y recortar desde ahí
+                for x in range(w):
+                    # Encontrar todos los píxeles blancos en esta columna
+                    col_ys = np.where(sil[:, x] > 0)[0]
+
+                    if len(col_ys) > 0:
+                        # Píxel más bajo (mayor Y) en esta columna
+                        bottom_y = int(col_ys.max())
+
+                        # Recortar crop_pixels hacia arriba desde bottom_y
+                        cut_start = max(0, bottom_y - crop_pixels)
+
+                        # Poner en negro desde cut_start hasta bottom_y
+                        frame[cut_start:bottom_y+1, x] = 0
+                        lenses[cut_start:bottom_y+1, x] = 0
+                        sil[cut_start:bottom_y+1, x] = 0
+
+    # Recorte lateral izquierdo adaptativo
+    if left_crop_pct > 0:
+        crop_pct = min(50.0, max(0.0, float(left_crop_pct)))
+        ys_l, xs_l = np.where(sil > 0)
+        if len(xs_l) > 0:
+            x_min = int(xs_l.min())
+            x_max = int(xs_l.max())
+            content_width = x_max - x_min
+            crop_pixels = int(content_width * (crop_pct / 100.0))
+
+            if crop_pixels > 0:
+                for y in range(h):
+                    row_xs = np.where(sil[y, :] > 0)[0]
+                    if len(row_xs) > 0:
+                        left_x = int(row_xs.min())
+                        cut_end = min(w, left_x + crop_pixels)
+                        frame[y, left_x:cut_end] = 0
+                        lenses[y, left_x:cut_end] = 0
+                        sil[y, left_x:cut_end] = 0
+
+    # Recorte lateral derecho adaptativo
+    if right_crop_pct > 0:
+        crop_pct = min(50.0, max(0.0, float(right_crop_pct)))
+        ys_r, xs_r = np.where(sil > 0)
+        if len(xs_r) > 0:
+            x_min = int(xs_r.min())
+            x_max = int(xs_r.max())
+            content_width = x_max - x_min
+            crop_pixels = int(content_width * (crop_pct / 100.0))
+
+            if crop_pixels > 0:
+                for y in range(h):
+                    row_xs = np.where(sil[y, :] > 0)[0]
+                    if len(row_xs) > 0:
+                        right_x = int(row_xs.max())
+                        cut_start = max(0, right_x - crop_pixels)
+                        frame[y, cut_start:right_x+1] = 0
+                        lenses[y, cut_start:right_x+1] = 0
+                        sil[y, cut_start:right_x+1] = 0
+
+    # Ajuste del borde interior (marco vs lentes)
+    if inner_adjust_px != 0:
+        adjust = int(inner_adjust_px)
+        if adjust > 0:
+            # Erosionar lentes = más marco, menos lente
+            kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (2*adjust+1, 2*adjust+1))
+            lenses = cv.erode(lenses, kernel, iterations=1)
+        elif adjust < 0:
+            # Dilatar lentes = menos marco, más lente
+            kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (2*abs(adjust)+1, 2*abs(adjust)+1))
+            lenses = cv.dilate(lenses, kernel, iterations=1)
+
+        # Recalcular marco con los lentes ajustados
+        frame = cv.bitwise_and(sil, cv.bitwise_not(lenses))
+
     return dict(
         gray=_b64_png_dataurl(gray),
         edges=_b64_png_dataurl(edges),
         sil=_b64_png_dataurl(sil),
         inner=_b64_png_dataurl(lenses),
+        frame_mask=_b64_png_dataurl(frame),  # Máscara PNG del marco para preview
         svg_frame=_mask_to_svg(frame),
         svg_lenses=_mask_to_svg(lenses)
     )

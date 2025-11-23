@@ -29,6 +29,7 @@ def app_instance():
             model_id=1, product_id=1, name="Modelo AR Lente A",
             visible=True,
             sort_order=0,
+            description="Desc Original",
             path_to_img_front_flattened="uploads/imgs/flattened/front/flat_front_1.png", # Path simulado
             path_to_glb="uploads/models/lente-a_test.glb" # Path simulado
         )
