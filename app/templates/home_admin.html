@@ -26,6 +26,22 @@
       <div class="barra_lateral">
         <h1 class="bienvenido">Bienvenido!</h1>
         <a href="/logout" class="btn btn-outline-primary" style="float:right">Logout</a>
+
+        <div class="categorias_admin">
+            <h5 class="mb-3">Categorías</h5>
+            <div class="list-group categoria-list">
+                <button class="list-group-item list-group-item-action active" data-category-id="all">
+                    Todos los modelos
+                    <span class="badge bg-primary rounded-pill">{{ models|length }}</span>
+                </button>
+                {% for categoria in categorias %}
+                <button class="list-group-item list-group-item-action" data-category-id="{{ categoria.category_id }}">
+                    Categoría {{ categoria.category_id }}
+                    <span class="badge bg-secondary rounded-pill">{{ categoria.modelos|length }}</span>
+                </button>
+                {% endfor %}
+            </div>
+        </div>
     </div>
 
 
@@ -33,7 +49,7 @@
         <h3>Modelos de lentes</h3>
         <div class="container_modelos" id="sortable-models-container">
             {% for lente in models%}
-            <div class="item_cuadricula" data-model-id="{{ lente.model_id }}">
+            <div class="item_cuadricula" data-model-id="{{ lente.model_id }}" data-categories="{% if lente.product and lente.product.categorias %}{% for cat in lente.product.categorias %}{{ cat.category_id }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}">
                 <div class="info_lente_cuadricula">
                     <p class="nombre_cuadricula">{{lente.name}}</p>
                     <button class="btn btn-sm btn-outline-info toggle-visible" data-id="{{ lente.model_id }}" title="Visibilidad">
@@ -74,6 +90,39 @@
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 
 <script>
+    // --- Lógica de filtrado por categoría ---
+    document.querySelectorAll('.categoria-list .list-group-item').forEach(button => {
+        button.addEventListener('click', () => {
+            const categoryId = button.dataset.categoryId;
+
+            // Actualizar estado activo
+            document.querySelectorAll('.categoria-list .list-group-item').forEach(b => {
+                b.classList.remove('active');
+            });
+            button.classList.add('active');
+
+            // Filtrar modelos
+            const allModels = document.querySelectorAll('.item_cuadricula:not(.agregar_item)');
+
+            if (categoryId === 'all') {
+                // Mostrar todos
+                allModels.forEach(model => {
+                    model.style.display = '';
+                });
+            } else {
+                // Filtrar por categoría
+                allModels.forEach(model => {
+                    const categories = model.dataset.categories;
+                    if (categories && categories.split(',').includes(categoryId)) {
+                        model.style.display = '';
+                    } else {
+                        model.style.display = 'none';
+                    }
+                });
+            }
+        });
+    });
+
     // --- Lógica existente de toggle-visible ---
     document.querySelectorAll('.toggle-visible').forEach(button => {
         button.addEventListener('click', () => {

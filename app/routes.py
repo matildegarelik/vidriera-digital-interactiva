@@ -134,12 +134,33 @@ def home_admin():
      #   flash('Debes iniciar sesión primero')
       #  return redirect(url_for('main.login'))
 
-    # --- CAMBIO AQUÍ ---
-    # traemos todos los modelos ORDENADOS
-    models = Model.query.order_by(Model.sort_order).all()
-    # --- FIN CAMBIO ---
+    # Obtener todas las categorías con sus productos y modelos
+    categorias = (
+        db.session.query(Categoria)
+        .join(oc_product_to_category, oc_product_to_category.c.category_id == Categoria.category_id)
+        .join(Producto, Producto.product_id == oc_product_to_category.c.product_id)
+        .join(Model, Model.product_id == Producto.product_id)
+        .options(
+            joinedload(Categoria.productos).joinedload(Producto.descripcion),
+            joinedload(Categoria.productos).joinedload(Producto.ar_model),
+        )
+        .distinct()
+        .all()
+    )
 
-    return render_template('home_admin.html', models=models)
+    # Para cada categoría, obtener modelos ordenados (incluye visibles y no visibles para admin)
+    for cat in categorias:
+        modelos_query = [
+            p.ar_model for p in cat.productos
+            if p.ar_model is not None
+        ]
+        # Ordenar por sort_order
+        cat.modelos = sorted(modelos_query, key=lambda m: m.sort_order)
+
+    # También obtener todos los modelos para la vista completa
+    models = Model.query.order_by(Model.sort_order).all()
+
+    return render_template('home_admin.html', models=models, categorias=categorias)
     
 @main.route('/uploads/<path:filename>')
 def uploads(filename):
