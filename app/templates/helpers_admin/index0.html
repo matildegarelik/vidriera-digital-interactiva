@@ -7,13 +7,130 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/panel_admin.css') }}">
 
   <style>
-    .grid { display:grid; grid-template-columns: 360px 1fr; gap:12px; }
-    .row  { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    aside .previewBox { background:#0f0f0f; border:1px solid #222; border-radius:8px; min-height:220px; display:grid; place-items:center; overflow:hidden; }
-    aside .previewBox > * { max-width:100%; max-height:260px; width:auto; height:auto; display:block; }
-    .mask { background:#0f0f0f; border:1px solid #222; border-radius:8px; overflow:hidden; min-height:220px; display:grid; place-items:center; }
-    .mask img { width:100%; height:auto; display:block; }
-    iframe.svgPrev { width:100%; height:260px; border:0; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 8px;
+      max-width: 100vw;
+      max-height: 100vh;
+      overflow: hidden;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 580px 1fr;
+      gap: 10px;
+      max-width: 100%;
+      width: 100%;
+      max-height: calc(100vh - 16px);
+      overflow: hidden;
+    }
+    @media (max-width: 1400px) {
+      .grid { grid-template-columns: 520px 1fr; }
+    }
+    @media (max-width: 1200px) {
+      .grid { grid-template-columns: 480px 1fr; }
+    }
+    @media (max-width: 1024px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    aside {
+      overflow-y: auto;
+      max-height: calc(100vh - 16px);
+      padding-right: 8px;
+    }
+    main {
+      overflow-y: auto;
+      max-height: calc(100vh - 16px);
+      padding-right: 8px;
+    }
+    .row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      max-width: 100%;
+      margin-bottom: 4px;
+    }
+    .row > * { min-width: 0; }
+    .col-md-6 {
+      flex: 1 1 calc(50% - 6px);
+      min-width: 250px;
+    }
+    @media (max-width: 1200px) {
+      .col-md-6 { flex: 1 1 100%; }
+    }
+    aside .previewBox {
+      background: #0f0f0f;
+      border: 1px solid #222;
+      border-radius: 4px;
+      min-height: 60px;
+      height: 80px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      max-width: 100%;
+    }
+    aside .previewBox > * {
+      max-width: 100%;
+      max-height: 75px;
+      width: auto;
+      height: auto;
+      display: block;
+    }
+    .mask {
+      background: #0f0f0f;
+      border: 1px solid #222;
+      border-radius: 6px;
+      overflow: hidden;
+      min-height: 200px;
+      height: 280px;
+      display: grid;
+      place-items: center;
+      max-width: 100%;
+    }
+    .mask img {
+      max-width: 100%;
+      max-height: 270px;
+      width: auto;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+    .mask canvas {
+      max-width: 100%;
+      max-height: 270px !important;
+      width: auto;
+      height: auto;
+    }
+    iframe.svgPrev {
+      width: 100%;
+      max-width: 100%;
+      height: 80px;
+      border: 0;
+    }
+    input[type="range"] {
+      width: 100%;
+      max-width: 100%;
+      margin: 2px 0;
+    }
+    button {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding: 5px 8px;
+      font-size: 11px;
+    }
+    .grp {
+      max-width: 100%;
+      margin-bottom: 6px;
+    }
+    h3 { margin: 4px 0 3px 0; font-size: 14px; }
+    h4 { margin: 3px 0 2px 0; font-size: 12px; }
+    label { font-size: 11px; display: block; margin-bottom: 1px; }
+    label span { font-weight: bold; }
+    small { font-size: 9px; display: block; margin-top: -2px; }
+    input[type="file"] { font-size: 11px; padding: 3px; }
+    #frontUploadRow, #sideUploadRow { margin-bottom: 4px; }
   </style>
 </head>
 <body>
@@ -32,55 +149,63 @@
         <input id="frontFile" type="file" accept="image/*" />
       </div>
       <div class="row">
-        <div style="flex:1">
-          <label>Cierre (radio) <span id="closeRVal">10</span></label>
-          <input id="closeR" type="range" min="2" max="40" step="1" value="10" />
+        <div class="col-md-6">
+          <h4>Controles</h4>
+          <div class="row">
+            <div style="flex:1">
+              <label>Cierre (radio) <span id="closeRVal">10</span></label>
+              <input id="closeR" type="range" min="2" max="40" step="1" value="10" />
+            </div>
+            <div style="flex:1">
+              <label>Mín área <span id="minAreaVal">1200</span></label>
+              <input id="minArea" type="range" min="200" max="8000" step="100" value="1200" />
+            </div>
+          </div>
+          <div class="row">
+            <div style="flex:1">
+              <label>Fuerza erosión <span id="erodeStrengthVal">1.0</span></label>
+              <input id="erodeStrength" type="range" min="0.3" max="2.5" step="0.1" value="1.0" />
+            </div>
+            <div style="flex:1">
+              <label>Umbral distancia <span id="distThresholdVal">2.0</span></label>
+              <input id="distThreshold" type="range" min="0.5" max="8.0" step="0.5" value="2.0" />
+            </div>
+          </div>
+          <div class="row">
+            <div style="flex:1">
+              <label>Umbral saturación <span id="satThresholdVal">35</span></label>
+              <input id="satThreshold" type="range" min="10" max="100" step="5" value="35" />
+            </div>
+          </div>
         </div>
-        <div style="flex:1">
-          <label>Mín área <span id="minAreaVal">1200</span></label>
-          <input id="minArea" type="range" min="200" max="8000" step="100" value="1200" />
+        <div class="col-md-6">
+          <h4>Recortes adaptativos</h4>
+          <div class="row">
+            <div style="flex:1">
+              <label>Recorte inferior (%) <span id="bottomCropVal">0</span></label>
+              <input id="bottomCrop" type="range" min="0" max="100" step="1" value="0" />
+            </div>
+          </div>
+          <div class="row">
+            <div style="flex:1">
+              <label>Recorte izquierdo (%) <span id="leftCropVal">0</span></label>
+              <input id="leftCrop" type="range" min="0" max="50" step="1" value="0" />
+            </div>
+            <div style="flex:1">
+              <label>Recorte derecho (%) <span id="rightCropVal">0</span></label>
+              <input id="rightCrop" type="range" min="0" max="50" step="1" value="0" />
+            </div>
+          </div>
+          <div class="row">
+            <div style="flex:1">
+              <label>Ajuste interior (px) <span id="innerAdjustVal">0</span></label>
+              <input id="innerAdjust" type="range" min="-30" max="30" step="1" value="0" />
+              <small style="color:#888; font-size:11px;">+ = más marco, - = más lente</small>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="row">
-        <div style="flex:1">
-          <label>Fuerza erosión <span id="erodeStrengthVal">1.0</span></label>
-          <input id="erodeStrength" type="range" min="0.3" max="2.5" step="0.1" value="1.0" />
-        </div>
-        <div style="flex:1">
-          <label>Umbral distancia <span id="distThresholdVal">2.0</span></label>
-          <input id="distThreshold" type="range" min="0.5" max="8.0" step="0.5" value="2.0" />
-        </div>
-      </div>
-      <div class="row">
-        <div style="flex:1">
-          <label>Umbral saturación <span id="satThresholdVal">35</span></label>
-          <input id="satThreshold" type="range" min="10" max="100" step="5" value="35" />
-        </div>
-      </div>
-      <h4>Recortes adaptativos</h4>
-      <div class="row">
-        <div style="flex:1">
-          <label>Recorte inferior (%) <span id="bottomCropVal">0</span></label>
-          <input id="bottomCrop" type="range" min="0" max="100" step="1" value="0" />
-        </div>
-      </div>
-      <div class="row">
-        <div style="flex:1">
-          <label>Recorte izquierdo (%) <span id="leftCropVal">0</span></label>
-          <input id="leftCrop" type="range" min="0" max="50" step="1" value="0" />
-        </div>
-        <div style="flex:1">
-          <label>Recorte derecho (%) <span id="rightCropVal">0</span></label>
-          <input id="rightCrop" type="range" min="0" max="50" step="1" value="0" />
-        </div>
-      </div>
-      <div class="row">
-        <div style="flex:1">
-          <label>Ajuste interior (px) <span id="innerAdjustVal">0</span></label>
-          <input id="innerAdjust" type="range" min="-30" max="30" step="1" value="0" />
-          <small style="color:#888; font-size:11px;">+ = más marco, - = más lente</small>
-        </div>
-      </div>
+
       <div class="row">
         <button id="btnFrontUpdate">Actualizar máscaras (servidor)</button>
       </div>
@@ -90,10 +215,16 @@
         <button id="btnDownloadGlass" class="secondary">Descargar SVG (lentes)</button>
       </div>
 
-      <h4>Marco</h4>
-      <div id="framePreview" class="previewBox"></div>
-      <h4>Lentes</h4>
-      <div id="glassPreview" class="previewBox"></div>
+      <div class="row">
+        <div class="col-md-6">
+          <h4>Marco</h4>
+          <div id="framePreview" class="previewBox"></div>
+        </div>
+        <div class="col-md-6">
+          <h4>Lentes</h4>
+          <div id="glassPreview" class="previewBox"></div>
+        </div>
+      </div>
     </div>
 
     <h3>2) Lateral (patilla)</h3>
