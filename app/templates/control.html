@@ -15,7 +15,8 @@
     </div>
     <button class="botones_arriba_abajo" onclick="moverCatalogo('abajo')"><i class="fas fa-caret-down"></i></button>
   </div>
-  <button class="boton_probar">Probar</button>
+  <button class="boton_probar" id="btnProbar" onclick="probar()">Probar</button>
+  <button class="boton_volver" id="btnVolver" onclick="volver()" style="display:none">Volver al catálogo</button>
 </div>
 {% endblock %}
 
@@ -25,6 +26,18 @@
   const socket = io();
   let modo = 1; //si el modo es 1 cambio la categoria, si es 2 cambio los productos
   
+
+  function probar() {
+    socket.emit("solicitar_modelo_activo", {});
+    document.getElementById('btnProbar').style.display = 'none';
+    document.getElementById('btnVolver').style.display = '';
+  }
+
+  function volver() {
+    socket.emit("volver_catalogo", {});
+    document.getElementById('btnVolver').style.display = 'none';
+    document.getElementById('btnProbar').style.display = '';
+  }
 
   function moverCatalogo(direccion) {
     if(direccion == "arriba"){
@@ -41,6 +54,8 @@
       }
     }
   }
+
+
 
 </script>
 {% endblock %}

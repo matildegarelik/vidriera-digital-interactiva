@@ -3,15 +3,23 @@
 {% block content %}
 <h1>Menú</h1>
 <ul>
-    <li><a href="/catalogo">Catálogo para pantallas</a></li>
-    <li><a href="/login">Login admin</a></li>
+  <li><a href="{{ url_for('main.catalogo') }}">Catálogo para pantallas</a></li>
+  <li><a href="{{ url_for('main.login') }}">Login admin</a></li>
 
-    <li><a href="/control">Control por QR (esto desp lo sacamos)</a></li>
-    <li><a href="#">Probador virtual (esto desp lo sacamos)</a></li>
-    
-    <li><a href="#" target="_blank">E-commerce institucional</a></li>
+  <!-- “Control por QR”: tu app tiene /control y /qr; si el de QR es este, dejá la siguiente línea -->
+  <li><a href="{{ url_for('main.qr') }}">Control por QR (esto desp lo sacamos)</a></li>
+  <!-- si en realidad querías /control, usa:  {{ url_for('main.control') }} -->
 
-    <li><a href="/_dev/imgs_to_svg">Imgs a svg</a></li>
-    <li><a href="/_dev/glb_a_cara">GLB a cara</a></li>
+  <!-- Estos dos requieren un model_id según el url_map; como link “directo” no se puede sin ID.
+       Por ahora apuntemos al panel admin, desde donde elegís el modelo. -->
+  <li><a href="{{ url_for('main.home_admin') }}">Probador virtual (esto desp lo sacamos)</a></li>
+  <li><a href="{{ url_for('main.home_admin') }}" target="_blank">E-commerce institucional</a></li>
+
+  <!-- Admin helpers reales en tu app:
+       /_admin_helpers/imgs_to_svg/<int:model_id>
+       /glb-a-cara/<int:model_id>
+       Ambos piden model_id, así que mejor entrar por el home_admin -->
+  <li><a href="{{ url_for('main.home_admin') }}">Imgs a svg</a></li>
+  <li><a href="{{ url_for('main.home_admin') }}">GLB a cara</a></li>
 </ul>
 {% endblock %}

@@ -21,7 +21,7 @@ def _save_upload(file_storage, subdir: str, prefix: str = "") -> str | None:
     if not file_storage or not getattr(file_storage, "filename", ""):
         return None
 
-    root = "uploads"
+    root = "/var/www/html/vidriera/uploads"
     base_dir = Path(root) / subdir
     base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -33,7 +33,8 @@ def _save_upload(file_storage, subdir: str, prefix: str = "") -> str | None:
     path_abs = base_dir / final_name
 
     file_storage.save(path_abs)
-    return str(path_abs.as_posix())
+    rel = str((Path(subdir) / final_name).as_posix())
+    return f"/uploads/{rel}"
 
 
 def _safe_delete(relpath: str | None):
@@ -88,10 +89,19 @@ def cerrar_y_rellenar(mask_edges):
     filled = cv.morphologyEx(closed, cv.MORPH_CLOSE, np.ones((21,21), np.uint8), iterations=1)
     return (filled > 0).astype(np.uint8)
 
+def _pil_imread(path):
+    """Carga imagen con PIL y devuelve array BGR (evita crash de cv2.imread en mod_wsgi)."""
+    from PIL import Image
+    try:
+        img = Image.open(path).convert('RGB')
+        return np.array(img)[:, :, ::-1].copy()
+    except Exception:
+        return None
+
 def caracterizar_lente_reducida(path_lente, path_fondo):
-    img_bgr = cv.imread(path_lente)
+    img_bgr = _pil_imread(path_lente)
     assert img_bgr is not None, "No se pudo leer la imagen principal."
-    img_fondo_solo = cv.imread(path_fondo)
+    img_fondo_solo = _pil_imread(path_fondo)
     if img_fondo_solo is None:
         alto, ancho, canales = img_bgr.shape
         img_fondo_solo = np.ones((alto, ancho, canales), dtype=np.uint8) * 255
@@ -309,7 +319,10 @@ def _imread_uploads_rel(rel_path):
     p = Path(root) / rel
     if not p.exists():
         return None
-    return cv.imread(str(p), cv.IMREAD_COLOR)
+    # Usamos PIL para evitar el crash de cv2.imread en mod_wsgi (%{GLOBAL})
+    from PIL import Image
+    img_pil = Image.open(str(p)).convert('RGB')
+    return np.array(img_pil)[:, :, ::-1].copy()  # RGB → BGR para compatibilidad con cv2
 
 def _load_model_image_or_upload(model_obj: Model | None,
                                 primary_attr: str,

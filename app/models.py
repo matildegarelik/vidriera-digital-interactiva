@@ -44,6 +44,7 @@ class Producto(db.Model):
     image = db.Column(db.String(150))
     sku = db.Column(db.String(64))
     upc = db.Column(db.String(12))
+    mpn = db.Column(db.String(64))
     quantity = db.Column(db.Integer)
     price = db.Column(db.Numeric(15, 4))
     status = db.Column(db.Boolean)

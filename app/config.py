@@ -10,6 +10,7 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///default.db")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     TESTING = False
+    TEMPLATES_AUTO_RELOAD = True
 
     UPLOAD_FOLDER = os.path.join(PROJECT_ROOT, 'uploads')
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", 50 * 1024 * 1024))

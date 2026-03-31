@@ -28,7 +28,7 @@
           </div>
           <div class="imagen_costado">
             {% if ar_model.path_to_img_front %}
-                <img src="/{{ ar_model.path_to_img_front }}" alt="Frente" class="img-fluid">
+                <img src="{{ ar_model.path_to_img_front }}" alt="Frente" class="img-fluid">
               {% else %}
                 <span class="text-muted">Sin archivo</span>
               {% endif %}

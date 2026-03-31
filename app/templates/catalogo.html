@@ -254,7 +254,20 @@
         moveNextCategory();
       }
     });
-      
+
+    socket.on("solicitar_modelo_activo", () => {
+      console.log("Catalogo recibio solicitar_modelo_activo");
+      const activePane = getActiveCategoryPane();
+      console.log("activePane:", activePane);
+      if (!activePane) return;
+      const activeSubPane = activePane.querySelector('.tab-pane.show.active');
+      console.log("activeSubPane:", activeSubPane);
+      if (!activeSubPane) return;
+      const probarLink = activeSubPane.querySelector('a.btn.btn-primary');
+      console.log("probarLink:", probarLink);
+      if (probarLink) window.location.href = probarLink.getAttribute('href');
+    });
+
 </script>
 
 

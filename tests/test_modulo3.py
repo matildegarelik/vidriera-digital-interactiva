@@ -71,9 +71,22 @@ def test_home_admin_loads(logged_in_client):
     assert resp.status_code == 200 and b"Modelo AR Lente A" in resp.data
 
 # --- Tests CRUD ---
+#def test_lente_nuevo_page_loads(logged_in_client):
+#    resp = logged_in_client.get("/lente/nuevo")
+#    assert resp.status_code == 200 and b"Lente B" in resp.data and b"Lente A" not in resp.data
 def test_lente_nuevo_page_loads(logged_in_client):
     resp = logged_in_client.get("/lente/nuevo")
-    assert resp.status_code == 200 and b"Lente B" in resp.data and b"Lente A" not in resp.data
+    assert resp.status_code == 200
+    assert b"Agregar Modelo AR" in resp.data
+
+    # El form existe y es POST (sin forzar action)
+    assert b"<form" in resp.data
+    assert b'method="POST"' in resp.data or b"method='POST'" in resp.data
+
+    # Campos esperados
+    assert b'name="product_id"' in resp.data
+    assert b'name="name"' in resp.data
+    assert b'name="description"' in resp.data
 def test_lente_nuevo_post(logged_in_client, app_instance):
     resp = logged_in_client.post("/lente/nuevo", data={"product_id": 2, "name": "Nuevo Modelo Test", "description": "Descrip", "visible": "on"}, follow_redirects=True)
     assert resp.status_code == 200

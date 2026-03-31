@@ -12,6 +12,7 @@ from .utils import caracterizar_lente_reducida, norm, _maybe_replace,_load_model
 import numpy as np
 import cv2 as cv
 from pathlib import Path
+import os
 
 main = Blueprint('main', __name__)
 
@@ -21,6 +22,8 @@ def index():
 
 @main.route('/catalogo')
 def catalogo():
+    print(">>> DB URI:", os.getenv("SQLALCHEMY_DATABASE_URI"))
+
     # 1. Obtener categorías (sin cambios en esta parte)
     categorias = (
         db.session.query(Categoria)
@@ -94,10 +97,19 @@ def handle_mover_producto(data):
 def handle_mover_categoria(data):
     # reenviamos la orden de movimiento a todos los catálogos
     emit("actualizar_categoria", data, broadcast=True, include_self=False)
-    
+
+@socketio.on("solicitar_modelo_activo")
+def handle_solicitar_modelo_activo(data):
+    emit("solicitar_modelo_activo", data, broadcast=True, include_self=False)
+
+@socketio.on("volver_catalogo")
+def handle_volver_catalogo(data):
+    emit("volver_catalogo", data, broadcast=True, include_self=False)
+
+
 @main.route("/qr")
 def qr():
-    url = url_for('main.control',external=True)
+    url = url_for('main.control', _external=True)
     img = qrcode.make(url)
     buf = io.BytesIO()
     img.save(buf)
@@ -112,8 +124,7 @@ def login():
 
         user = Usuario.query.filter_by(username=username).first()
         
-        if user and user.password == password:  # si password está en texto plano
-        # if user and check_password_hash(user.password, password):
+        if user and check_password_hash(user.password, password):
             session['usuario'] = username
             return redirect(url_for('main.home_admin'))
 
@@ -130,9 +141,9 @@ def logout():
 
 @main.route('/home_admin')
 def home_admin():
-    #if 'usuario' not in session:
-     #   flash('Debes iniciar sesión primero')
-      #  return redirect(url_for('main.login'))
+    if 'usuario' not in session:
+        flash('Debes iniciar sesión primero')
+        return redirect(url_for('main.login'))
 
     # Obtener todas las categorías con sus productos y modelos
     categorias = (
@@ -183,9 +194,11 @@ def agregar_lente():
                 exists().where(oc_product_to_category.c.product_id == Producto.product_id)
             )
             .filter(~Producto.product_id.in_(db.session.query(subq.c.product_id)))
+            .filter(Producto.quantity > 0)
+            .filter(Producto.mpn.like("O%"))
             .order_by(func.coalesce(Producto.date_modified, Producto.date_added).desc(),
                     Producto.product_id.desc())
-            .limit(100)
+            .limit(2000)
             .all()
         )
         return render_template('lente_nuevo.html', productos_disponibles=opciones)
@@ -522,17 +535,19 @@ def api_seg_b_front():
     upload_fs = request.files.get('image')
     model_id = request.form.get('model_id')
 
-    m = db.session.get(Model, model_id)
-    img = _load_model_image_or_upload(
-        m,
-        'path_to_img_front_flattened',
-        upload_fs,
-        fallbacks=('path_to_img_front',)
-    )
-    if img is None:
-        return jsonify({"ok": False, "error": "no_image"}), 400
-
+    import traceback as _tb, datetime as _dt
+    _log = '/var/www/html/vidriera/wsgi_err.log'
     try:
+        m = db.session.get(Model, model_id)
+        img = _load_model_image_or_upload(
+            m,
+            'path_to_img_front_flattened',
+            upload_fs,
+            fallbacks=('path_to_img_front',)
+        )
+        if img is None:
+            return jsonify({"ok": False, "error": "no_image"}), 400
+
         out = _front_segmentation_vb(
             img,
             close_r=close_r,
@@ -552,7 +567,7 @@ def api_seg_b_front():
                 "edges": out["edges"],
                 "sil":   out["sil"],
                 "inner": out["inner"],
-                "frame_mask": out["frame_mask"],  # Máscara PNG del marco para preview
+                "frame_mask": out["frame_mask"],
             },
             "svgs": {
                 "frame":  out["svg_frame"],
@@ -560,6 +575,8 @@ def api_seg_b_front():
             }
         })
     except Exception as e:
+        with open(_log, 'a') as _f:
+            _f.write(f"\n[{_dt.datetime.now()}] seg_b_front ERROR:\n{_tb.format_exc()}")
         return jsonify({"ok": False, "error": "proc_error", "detail": str(e)}), 500
 
 @main.route("/_admin_helpers/api/seg_b/temple/", methods=['POST'])
@@ -638,3 +655,4 @@ def update_order():
         current_app.logger.error(f"Error updating order: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 # --- FIN RUTA NUEVA ---
+

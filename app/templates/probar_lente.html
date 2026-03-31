@@ -258,5 +258,13 @@
     // Render loop
     (function loop(){ renderer.render(scene,camera); requestAnimationFrame(loop); })();
   </script>
+
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script>
+    const socket = io();
+    socket.on("volver_catalogo", () => {
+      window.location.href = "{{ url_for('main.catalogo') }}";
+    });
+  </script>
 </body>
 </html>

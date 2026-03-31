@@ -24,7 +24,7 @@
                 <div class="card-header">Imagen frente (original)</div>
                 <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
                     {% if ar_model.path_to_img_front %}
-                    <img src="/{{ ar_model.path_to_img_front }}" alt="Frente" class="img-fluid">
+                    <img src="{{ ar_model.path_to_img_front }}" alt="Frente" class="img-fluid">
                     {% else %}
                     <span class="text-muted">Sin archivo</span>
                     {% endif %}
@@ -42,7 +42,7 @@
                 <div class="card-header">Imagen perfil (original)</div>
                 <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
                     {% if ar_model.path_to_img_side %}
-                    <img src="/{{ ar_model.path_to_img_side }}" alt="Costado" class="img-fluid">
+                    <img src="{{ ar_model.path_to_img_side }}" alt="Costado" class="img-fluid">
                     {% else %}
                     <span class="text-muted">Sin archivo</span>
                     {% endif %}
@@ -59,7 +59,7 @@
                 <div class="card-header">Imagen fondo (original)</div>
                 <div class="card-body d-flex align-items-center justify-content-center" style="min-height:180px;">
                     {% if ar_model.path_to_img_bg %}
-                    <img src="/{{ ar_model.path_to_img_bg }}" alt="Fondo" class="img-fluid">
+                    <img src="{{ ar_model.path_to_img_bg }}" alt="Fondo" class="img-fluid">
                     {% else %}
                     <span class="text-muted">Sin archivo</span>
                     {% endif %}
