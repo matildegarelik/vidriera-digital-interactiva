@@ -456,22 +456,29 @@ async function requestFront(usePreloaded = true){
     if (ui.mInner) ui.mInner.src = j.masks?.inner || '';
 
     // Canvas interactivo: foto + máscaras de zonas
-    if (j.masks?.color) {
+    console.log('[dbg] masks keys:', j.masks ? Object.keys(j.masks) : 'sin masks');
+    console.log('[dbg] PRELOADED:', JSON.stringify({svg_frame: PRELOADED?.svg_frame ? '(set)' : '', svg_glasses: PRELOADED?.svg_glasses ? '(set)' : ''}));
+    const photoSrc = j.masks?.color || j.masks?.gray || '';
+    if (photoSrc) {
       const frameSrc = (usePreloaded && PRELOADED?.svg_frame)   ? PRELOADED.svg_frame   : j.masks?.frame_mask || '';
       const lenteSrc = (usePreloaded && PRELOADED?.svg_glasses) ? PRELOADED.svg_glasses : j.masks?.inner      || '';
+      console.log('[dbg] frameSrc:', frameSrc ? frameSrc.slice(0,80) : '(vacío)', '| lenteSrc:', lenteSrc ? lenteSrc.slice(0,80) : '(vacío)');
       if (frameSrc && lenteSrc) {
-        await initInteractiveMask(j.masks.color, frameSrc, lenteSrc).catch(async e => {
+        await initInteractiveMask(photoSrc, frameSrc, lenteSrc).catch(async e => {
           console.warn('Error iniciando canvas interactivo con SVG guardado, reintentando con máscaras binarias:', e);
-          // Fallback: usar máscaras binarias del API (base64 data URLs que siempre funcionan)
           const fbFrame = j.masks?.frame_mask || '';
           const fbLente = j.masks?.inner      || '';
           if (fbFrame && fbLente) {
-            await initInteractiveMask(j.masks.color, fbFrame, fbLente).catch(e2 => {
+            await initInteractiveMask(photoSrc, fbFrame, fbLente).catch(e2 => {
               console.warn('Error iniciando canvas interactivo (fallback):', e2);
             });
           }
         });
+      } else {
+        console.warn('[dbg] initInteractiveMask no llamado: frameSrc vacío o lenteSrc vacío');
       }
+    } else {
+      console.warn('[dbg] initInteractiveMask no llamado: sin photoSrc (color y gray ausentes)');
     }
 
     // svgs
