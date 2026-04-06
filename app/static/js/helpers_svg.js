@@ -460,8 +460,16 @@ async function requestFront(usePreloaded = true){
       const frameSrc = (usePreloaded && PRELOADED?.svg_frame)   ? PRELOADED.svg_frame   : j.masks?.frame_mask || '';
       const lenteSrc = (usePreloaded && PRELOADED?.svg_glasses) ? PRELOADED.svg_glasses : j.masks?.inner      || '';
       if (frameSrc && lenteSrc) {
-        await initInteractiveMask(j.masks.color, frameSrc, lenteSrc).catch(e => {
-          console.warn('Error iniciando canvas interactivo:', e);
+        await initInteractiveMask(j.masks.color, frameSrc, lenteSrc).catch(async e => {
+          console.warn('Error iniciando canvas interactivo con SVG guardado, reintentando con máscaras binarias:', e);
+          // Fallback: usar máscaras binarias del API (base64 data URLs que siempre funcionan)
+          const fbFrame = j.masks?.frame_mask || '';
+          const fbLente = j.masks?.inner      || '';
+          if (fbFrame && fbLente) {
+            await initInteractiveMask(j.masks.color, fbFrame, fbLente).catch(e2 => {
+              console.warn('Error iniciando canvas interactivo (fallback):', e2);
+            });
+          }
         });
       }
     }
