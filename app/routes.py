@@ -16,6 +16,7 @@ import os
 
 main = Blueprint('main', __name__)
 
+
 @main.route('/')
 def index():
     return render_template('index.html')
@@ -622,22 +623,36 @@ def api_seg_b_front():
 @main.route("/_admin_helpers/api/seg_b/apply_mask", methods=['POST'])
 def api_seg_b_apply_mask():
     """Genera SVG de marco desde una máscara PNG editada manualmente en el cliente."""
-    data = request.get_json(force=True) or {}
-    b64 = data.get('mask_b64', '')
-    if not b64:
-        return jsonify({"ok": False, "error": "no_mask"}), 400
+    import traceback as _tb2, datetime as _dt2
+    _log2 = '/var/www/html/vidriera/wsgi_err.log'
     try:
-        _, encoded = b64.split(',', 1)
-        img_bytes = base64.b64decode(encoded)
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        mask = cv.imdecode(nparr, cv.IMREAD_GRAYSCALE)
-        if mask is None:
-            return jsonify({"ok": False, "error": "decode_error"}), 400
+        encoded = request.form.get('mask_b64', '').strip()
+        with open(_log2, 'a') as _fd:
+            _fd.write(f"[DBG16] form={list(request.form.keys())} encoded_len={len(encoded)} start={encoded[:20]!r}\n")
+        if not encoded:
+            return jsonify({"ok": False, "error": "no_mask"}), 400
+        if ',' in encoded:
+            encoded = encoded.split(',', 1)[1]
+        try:
+            img_bytes = base64.b64decode(encoded)
+        except Exception:
+            return jsonify({"ok": False, "error": "b64_error"}), 400
+        if len(img_bytes) < 8 or img_bytes[:8] != b'\x89PNG\r\n\x1a\n':
+            return jsonify({"ok": False, "error": "not_png"}), 400
+        from PIL import Image as _PILImage
+        import io as _io
+        pil_img = _PILImage.open(_io.BytesIO(img_bytes)).convert('L')
+        mask = np.array(pil_img, dtype=np.uint8)
         mask = (mask > 128).astype(np.uint8) * 255
         svg = _mask_to_svg(mask)
         return jsonify({"ok": True, "svg_frame": svg})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    except BaseException as e:
+        try:
+            with open(_log2, 'a') as _f2:
+                _f2.write(f"\n[{_dt2.datetime.now()}] apply_mask BASEERROR {type(e).__name__}:\n{_tb2.format_exc()}")
+        except BaseException:
+            pass
+        return jsonify({"ok": False, "error": str(e), "type": type(e).__name__}), 200
 
 @main.route("/_admin_helpers/api/seg_b/temple/", methods=['POST'])
 def api_seg_b_temple():

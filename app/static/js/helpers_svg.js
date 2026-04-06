@@ -410,15 +410,17 @@ async function applyEditedMask() {
 
   setLoading(true);
   try {
+    const _mkFd = (canvas) => {
+      const dataUrl = canvas.toDataURL('image/png');
+      const commaIdx = dataUrl.indexOf(',');
+      const b64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+      const fd = new FormData();
+      fd.append('mask_b64', b64);
+      return fd;
+    };
     const [rMarco, rLente] = await Promise.all([
-      fetch('/_admin_helpers/api/seg_b/apply_mask', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ mask_b64: marcoC.toDataURL('image/png') })
-      }).then(r => r.json()),
-      fetch('/_admin_helpers/api/seg_b/apply_mask', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ mask_b64: lenteC.toDataURL('image/png') })
-      }).then(r => r.json())
+      fetch('/_admin_helpers/api/seg_b/apply_mask', { method:'POST', body: _mkFd(marcoC) }).then(r => r.json()),
+      fetch('/_admin_helpers/api/seg_b/apply_mask', { method:'POST', body: _mkFd(lenteC) }).then(r => r.json())
     ]);
     if (!rMarco.ok) throw new Error(rMarco.error || 'Error marco');
     if (!rLente.ok) throw new Error(rLente.error || 'Error lente');
