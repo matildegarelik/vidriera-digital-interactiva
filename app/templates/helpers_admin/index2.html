@@ -23,6 +23,7 @@
       position:absolute; left:0; top:0; width:100%; height:100%;
       display:block;
     }
+    #video { object-fit: cover; }
 
     #ui {
       position: absolute;
@@ -394,12 +395,27 @@
 
       function toScreen(pt){
         const rect = video.getBoundingClientRect();
-        const W = renderer.domElement.width, H = renderer.domElement.height;
-        const x = (1-pt.x)*rect.width;  // espejo horizontal (video está espejado)
-        const y = pt.y*rect.height;
-        const sx = x - rect.width/2, sy = rect.height/2 - y;
-        const scaleX = W/rect.width, scaleY = H/rect.height;
-        return new THREE.Vector3(sx*scaleX, sy*scaleY, 0);
+        const vW = video.videoWidth  || 1280;
+        const vH = video.videoHeight || 720;
+        const videoAspect = vW / vH;
+        const elemAspect  = rect.width / rect.height;
+        let displayW, displayH, cropX = 0, cropY = 0;
+        if (videoAspect > elemAspect) {
+          // video más ancho → escala por altura (cover: recorta lados)
+          displayH = rect.height;
+          displayW = rect.height * videoAspect;
+          cropX = (displayW - rect.width) / 2;
+        } else {
+          // video más alto → escala por ancho (cover: recorta arriba/abajo)
+          displayW = rect.width;
+          displayH = rect.width / videoAspect;
+          cropY = (displayH - rect.height) / 2;
+        }
+        const x = (1 - pt.x) * displayW - cropX;
+        const y = pt.y * displayH - cropY;
+        const sx = x - rect.width / 2;
+        const sy = rect.height / 2 - y;
+        return new THREE.Vector3(sx, sy, 0);
       }
 
       // Suavizado
@@ -414,9 +430,7 @@
         // ===== MODO ESTÁTICO (Seguir cara OFF) =====
         if (!params.trackFace) {
 
-          const W = renderer.domElement.width;
-
-          const fakeDist = W * 0.20; 
+          const fakeDist = window.innerWidth * 0.20;
 
           model.position.set(
             params.offsetX * fakeDist,

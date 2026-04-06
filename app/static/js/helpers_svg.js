@@ -93,29 +93,16 @@ function normalizeFrameSVGWhite(svgText){
 
 // ---------- UI refs ----------
 const ui = {
-  // inputs
   frontFile: document.getElementById('frontFile'),
   sideFile : document.getElementById('sideFile'),
   closeR   : document.getElementById('closeR'),
   minArea  : document.getElementById('minArea'),
-  erodeStrength: document.getElementById('erodeStrength'),
-  distThreshold: document.getElementById('distThreshold'),
-  satThreshold: document.getElementById('satThreshold'),
-  bottomCrop: document.getElementById('bottomCrop'),
-  leftCrop: document.getElementById('leftCrop'),
-  rightCrop: document.getElementById('rightCrop'),
   innerAdjust: document.getElementById('innerAdjust'),
   closeRSide: document.getElementById('closeRSide'),
   minAreaSide: document.getElementById('minAreaSide'),
   // value displays
   closeRVal: document.getElementById('closeRVal'),
   minAreaVal: document.getElementById('minAreaVal'),
-  erodeStrengthVal: document.getElementById('erodeStrengthVal'),
-  distThresholdVal: document.getElementById('distThresholdVal'),
-  satThresholdVal: document.getElementById('satThresholdVal'),
-  bottomCropVal: document.getElementById('bottomCropVal'),
-  leftCropVal: document.getElementById('leftCropVal'),
-  rightCropVal: document.getElementById('rightCropVal'),
   innerAdjustVal: document.getElementById('innerAdjustVal'),
   // masks
   mGray:  document.getElementById('mGray'),
@@ -143,80 +130,319 @@ let lastFrameSVG = '';
 let lastGlassSVG = '';
 let lastTempleSVG = '';
 
-// Función para crear preview del marco sobre la foto (multiplicación binaria)
-async function createFramePreview(photoSrc, maskSrc) {
-  const canvas = document.getElementById('framePreviewCanvas');
-  if (!canvas) return;
+// ======================== CANVAS INTERACTIVO (PINCEL) ========================
+// Estados de la máscara: FONDO=0 (excluido), LENTE=1, MARCO=2
+const FONDO = 0, LENTE = 1, MARCO = 2;
 
-  const ctx = canvas.getContext('2d');
+let photoRGBA  = null;   // Uint8ClampedArray RGBA del original (copia)
+let maskPixels = null;   // Uint8Array por pixel: FONDO=0, LENTE=1, MARCO=2
+let maskWidth  = 0;
+let maskHeight = 0;
+const MAX_UNDO = 15;
+let undoStack  = [];
+let isPainting = false;
 
-  // Cargar imagen y máscara
-  const [photo, mask] = await Promise.all([
-    loadImage(photoSrc),
-    loadImage(maskSrc)
-  ]);
-
-  // Configurar canvas al tamaño de la imagen
-  canvas.width = photo.width;
-  canvas.height = photo.height;
-
-  // Crear canvas temporal para la máscara
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = photo.width;
-  tempCanvas.height = photo.height;
-  const tempCtx = tempCanvas.getContext('2d');
-
-  // Dibujar foto en el canvas principal
-  ctx.drawImage(photo, 0, 0);
-
-  // Dibujar máscara en canvas temporal
-  tempCtx.drawImage(mask, 0, 0);
-
-  // Obtener los datos de píxeles
-  const photoData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const maskData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
-
-  // Multiplicación binaria: foto × máscara (píxel por píxel)
-  for (let i = 0; i < photoData.data.length; i += 4) {
-    // La máscara es binaria: blanco (255) = mostrar, negro (0) = ocultar
-    const maskValue = maskData.data[i]; // canal R de la máscara (es grayscale)
-
-    if (maskValue === 0) {
-      // Si la máscara es negra (0), poner píxel en negro
-      photoData.data[i] = 0;     // R
-      photoData.data[i + 1] = 0; // G
-      photoData.data[i + 2] = 0; // B
-      // Alpha se mantiene en 255
-    }
-    // Si la máscara es blanca (255), mantener el píxel de la foto
-  }
-
-  // Escribir los datos modificados de vuelta al canvas
-  ctx.putImageData(photoData, 0, 0);
-}
+// --- Zoom ---
+const ZOOM_W = 420, ZOOM_H = 420;   // resolución interna del canvas de zoom
+let zoomCenterX = 0, zoomCenterY = 0;
+let zoomFactor  = 4;
 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = reject;
     img.src = src;
   });
 }
 
+/** Dibuja foto con overlay según estado + rectángulo amarillo de zoom */
+function renderMaskOverlay() {
+  const canvas = document.getElementById('framePreviewCanvas');
+  if (!canvas || !photoRGBA || !maskPixels) return;
+  const ctx = canvas.getContext('2d');
+  const data = ctx.createImageData(maskWidth, maskHeight);
+  const d = data.data;
+  for (let pi = 0, i = 0; pi < maskPixels.length; pi++, i += 4) {
+    const r = photoRGBA[i], g = photoRGBA[i+1], b = photoRGBA[i+2];
+    if (maskPixels[pi] === MARCO) {
+      d[i]   = Math.min(255, r + 90);
+      d[i+1] = Math.max(0,   g - 50);
+      d[i+2] = Math.max(0,   b - 50);
+    } else if (maskPixels[pi] === LENTE) {
+      d[i]   = Math.max(0,   r - 50);
+      d[i+1] = Math.min(255, g + 40);
+      d[i+2] = Math.min(255, b + 110);
+    } else {
+      d[i] = r * 0.22 | 0; d[i+1] = g * 0.22 | 0; d[i+2] = b * 0.22 | 0;
+    }
+    d[i+3] = 255;
+  }
+  ctx.putImageData(data, 0, 0);
+  // Rectángulo indicador de zona de zoom
+  if (maskWidth > 0) {
+    const rW = ZOOM_W / zoomFactor, rH = ZOOM_H / zoomFactor;
+    const rx = zoomCenterX - rW / 2,  ry = zoomCenterY - rH / 2;
+    const lw = Math.max(2, maskWidth / 250);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,230,0,0.95)';
+    ctx.lineWidth = lw;
+    ctx.setLineDash([lw * 5, lw * 2]);
+    ctx.strokeRect(rx, ry, rW, rH);
+    ctx.restore();
+  }
+}
+
+/** Renderiza el canvas de zoom con la zona seleccionada escalada */
+function renderZoomCanvas() {
+  const zCanvas = document.getElementById('zoomCanvas');
+  if (!zCanvas || !photoRGBA || !maskPixels) return;
+  const ctx = zCanvas.getContext('2d');
+  const rectW = ZOOM_W / zoomFactor, rectH = ZOOM_H / zoomFactor;
+  const left  = zoomCenterX - rectW / 2, top = zoomCenterY - rectH / 2;
+  const zData = ctx.createImageData(ZOOM_W, ZOOM_H);
+  const zd = zData.data;
+  for (let zy = 0; zy < ZOOM_H; zy++) {
+    for (let zx = 0; zx < ZOOM_W; zx++) {
+      const sx = Math.round(left + zx / zoomFactor);
+      const sy = Math.round(top  + zy / zoomFactor);
+      const zi = (zy * ZOOM_W + zx) * 4;
+      if (sx < 0 || sx >= maskWidth || sy < 0 || sy >= maskHeight) {
+        zd[zi] = zd[zi+1] = zd[zi+2] = 30; zd[zi+3] = 255;
+        continue;
+      }
+      const pi = sy * maskWidth + sx, ii = pi * 4;
+      const r = photoRGBA[ii], g = photoRGBA[ii+1], b = photoRGBA[ii+2];
+      if (maskPixels[pi] === MARCO) {
+        zd[zi]   = Math.min(255, r + 90);
+        zd[zi+1] = Math.max(0,   g - 50);
+        zd[zi+2] = Math.max(0,   b - 50);
+      } else if (maskPixels[pi] === LENTE) {
+        zd[zi]   = Math.max(0,   r - 50);
+        zd[zi+1] = Math.min(255, g + 40);
+        zd[zi+2] = Math.min(255, b + 110);
+      } else {
+        zd[zi] = r * 0.22 | 0; zd[zi+1] = g * 0.22 | 0; zd[zi+2] = b * 0.22 | 0;
+      }
+      zd[zi+3] = 255;
+    }
+  }
+  ctx.putImageData(zData, 0, 0);
+}
+
+function renderAll() {
+  renderMaskOverlay();
+  renderZoomCanvas();
+}
+
+/** Carga foto, frame_mask e inner_mask, inicializa estado 3-zonas, activa pincel.
+ *  MARCO  = frame_mask blanco
+ *  LENTE  = inner_mask blanco (y no es marco)
+ *  FONDO  = todo lo demás (fuera de los lentes)
+ */
+async function initInteractiveMask(photoSrc, frameMaskSrc, innerMaskSrc) {
+  const canvas = document.getElementById('framePreviewCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const [photo, frameMask, innerMask] = await Promise.all([
+    loadImage(photoSrc),
+    loadImage(frameMaskSrc),
+    loadImage(innerMaskSrc)
+  ]);
+
+  canvas.width  = photo.width;
+  canvas.height = photo.height;
+  maskWidth  = photo.width;
+  maskHeight = photo.height;
+
+  ctx.drawImage(photo, 0, 0);
+  photoRGBA = ctx.getImageData(0, 0, maskWidth, maskHeight).data.slice();
+
+  // Extraer frame_mask
+  const tmp = document.createElement('canvas');
+  tmp.width = maskWidth; tmp.height = maskHeight;
+  const tCtx = tmp.getContext('2d');
+  tCtx.drawImage(frameMask, 0, 0, maskWidth, maskHeight);
+  const frameData = tCtx.getImageData(0, 0, maskWidth, maskHeight).data;
+
+  // Extraer inner_mask
+  const tmp2 = document.createElement('canvas');
+  tmp2.width = maskWidth; tmp2.height = maskHeight;
+  const tCtx2 = tmp2.getContext('2d');
+  tCtx2.drawImage(innerMask, 0, 0, maskWidth, maskHeight);
+  const innerData = tCtx2.getImageData(0, 0, maskWidth, maskHeight).data;
+
+  maskPixels = new Uint8Array(maskWidth * maskHeight);
+  for (let pi = 0; pi < maskPixels.length; pi++) {
+    if (frameData[pi * 4] > 128) {
+      maskPixels[pi] = MARCO;
+    } else if (innerData[pi * 4] > 128) {
+      maskPixels[pi] = LENTE;
+    } else {
+      maskPixels[pi] = FONDO;
+    }
+  }
+
+  // Zoom: inicializar en el centro de la imagen
+  zoomCenterX = maskWidth / 2;
+  zoomCenterY = maskHeight / 2;
+
+  undoStack = [];
+  renderAll();
+
+  const toolbar = document.getElementById('brushToolbar');
+  if (toolbar) toolbar.style.display = 'block';
+
+  // Canvas principal: click/drag mueve la zona de zoom (cursor "mover")
+  canvas.style.cursor = 'move';
+  let _draggingZoom = false;
+  canvas.onmousedown = (e) => {
+    _draggingZoom = true;
+    const { x, y } = evToMask(e, canvas);
+    zoomCenterX = Math.max(0, Math.min(maskWidth,  x));
+    zoomCenterY = Math.max(0, Math.min(maskHeight, y));
+    renderAll();
+  };
+  canvas.onmousemove = (e) => {
+    if (!_draggingZoom) return;
+    const { x, y } = evToMask(e, canvas);
+    zoomCenterX = Math.max(0, Math.min(maskWidth,  x));
+    zoomCenterY = Math.max(0, Math.min(maskHeight, y));
+    renderAll();
+  };
+  canvas.onmouseup = canvas.onmouseleave = () => { _draggingZoom = false; };
+
+  // Canvas de zoom: pintar con pincel
+  const zCanvas = document.getElementById('zoomCanvas');
+  if (zCanvas) {
+    zCanvas.style.cursor = 'crosshair';
+    zCanvas.onmousedown = (e) => {
+      isPainting = true;
+      undoStack.push(maskPixels.slice());
+      if (undoStack.length > MAX_UNDO) undoStack.shift();
+      paintBrush(...evToZoomMask(e, zCanvas));
+    };
+    zCanvas.onmousemove = (e) => {
+      if (!isPainting) return;
+      paintBrush(...evToZoomMask(e, zCanvas));
+    };
+    zCanvas.onmouseup = zCanvas.onmouseleave = () => { isPainting = false; };
+  }
+}
+
+function evToMask(e, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: Math.round((e.clientX - rect.left) * maskWidth  / rect.width),
+    y: Math.round((e.clientY - rect.top)  * maskHeight / rect.height)
+  };
+}
+
+/** Convierte coords del canvas de zoom → coords en pixels de la imagen original */
+function evToZoomMask(e, zCanvas) {
+  const rect = zCanvas.getBoundingClientRect();
+  const zx = (e.clientX - rect.left) * ZOOM_W / rect.width;
+  const zy = (e.clientY - rect.top)  * ZOOM_H / rect.height;
+  const left = zoomCenterX - (ZOOM_W / zoomFactor) / 2;
+  const top  = zoomCenterY - (ZOOM_H / zoomFactor) / 2;
+  return [
+    Math.round(left + zx / zoomFactor),
+    Math.round(top  + zy / zoomFactor)
+  ];
+}
+
+function paintBrush(cx, cy) {
+  if (!maskPixels) return;
+  const size = parseInt(document.getElementById('brushSize')?.value || '8');
+  const mode = document.querySelector('input[name="brushMode"]:checked')?.value || 'marco';
+  const newVal = mode === 'marco' ? MARCO : mode === 'lente' ? LENTE : FONDO;
+  const r2 = size * size;
+  for (let dy = -size; dy <= size; dy++) {
+    for (let dx = -size; dx <= size; dx++) {
+      if (dx*dx + dy*dy > r2) continue;
+      const px = cx + dx, py = cy + dy;
+      if (px < 0 || px >= maskWidth || py < 0 || py >= maskHeight) continue;
+      maskPixels[py * maskWidth + px] = newVal;
+    }
+  }
+  renderAll();
+}
+
+function undoMaskEdit() {
+  if (undoStack.length === 0) return;
+  maskPixels = undoStack.pop();
+  renderAll();
+}
+
+/** Genera dos máscaras PNG (marco y lente) y actualiza ambos SVGs en el servidor. */
+async function applyEditedMask() {
+  if (!maskPixels || !maskWidth || !maskHeight) {
+    alert('Primero generá una máscara con "Actualizar máscaras".');
+    return;
+  }
+
+  const marcoC = document.createElement('canvas');
+  marcoC.width = maskWidth; marcoC.height = maskHeight;
+  const marcoCtx = marcoC.getContext('2d');
+  const marcoData = marcoCtx.createImageData(maskWidth, maskHeight);
+
+  const lenteC = document.createElement('canvas');
+  lenteC.width = maskWidth; lenteC.height = maskHeight;
+  const lenteCtx = lenteC.getContext('2d');
+  const lenteData = lenteCtx.createImageData(maskWidth, maskHeight);
+
+  for (let pi = 0, i = 0; pi < maskPixels.length; pi++, i += 4) {
+    const mv = maskPixels[pi] === MARCO ? 255 : 0;
+    const lv = maskPixels[pi] === LENTE ? 255 : 0;
+    marcoData.data[i] = marcoData.data[i+1] = marcoData.data[i+2] = mv; marcoData.data[i+3] = 255;
+    lenteData.data[i] = lenteData.data[i+1] = lenteData.data[i+2] = lv; lenteData.data[i+3] = 255;
+  }
+  marcoCtx.putImageData(marcoData, 0, 0);
+  lenteCtx.putImageData(lenteData, 0, 0);
+
+  // Mostrar máscaras finales en la fila de referencia
+  const mMarcoFinal = document.getElementById('mMarcoFinal');
+  const mLenteFinal = document.getElementById('mLenteFinal');
+  if (mMarcoFinal) { mMarcoFinal.src = marcoC.toDataURL('image/png'); mMarcoFinal.style.opacity = '1'; document.getElementById('mMarcoFinalHint')?.remove(); }
+  if (mLenteFinal) { mLenteFinal.src = lenteC.toDataURL('image/png'); mLenteFinal.style.opacity = '1'; document.getElementById('mLenteFinalHint')?.remove(); }
+
+  setLoading(true);
+  try {
+    const [rMarco, rLente] = await Promise.all([
+      fetch('/_admin_helpers/api/seg_b/apply_mask', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ mask_b64: marcoC.toDataURL('image/png') })
+      }).then(r => r.json()),
+      fetch('/_admin_helpers/api/seg_b/apply_mask', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ mask_b64: lenteC.toDataURL('image/png') })
+      }).then(r => r.json())
+    ]);
+    if (!rMarco.ok) throw new Error(rMarco.error || 'Error marco');
+    if (!rLente.ok) throw new Error(rLente.error || 'Error lente');
+
+    lastFrameSVG = normalizeFrameSVGWhite(rMarco.svg_frame || '');
+    lastGlassSVG = normalizeFrameSVGWhite(rLente.svg_frame || '');
+    putSVGPreview(ui.framePrev, lastFrameSVG);
+    putSVGPreview(ui.glassPrev, lastGlassSVG);
+  } catch (err) {
+    alert('Error al generar SVGs: ' + err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+// ============================================================================
+
 // ---------- FRONT: pedir al back y mostrar ----------
-async function requestFront(){
+// usePreloaded=true  → carga inicial: usa SVGs guardados si existen
+// usePreloaded=false → restablecer: usa siempre la segmentación del servidor
+async function requestFront(usePreloaded = true){
   const fd = new FormData();
   fd.append('model_id', MODEL_ID ?? '');
   fd.append('close_r', ui.closeR.value);
   fd.append('min_area', ui.minArea.value);
-  fd.append('erode_strength', ui.erodeStrength.value);
-  fd.append('dist_threshold', ui.distThreshold.value);
-  fd.append('sat_threshold', ui.satThreshold.value);
-  fd.append('bottom_crop_pct', ui.bottomCrop.value);
-  fd.append('left_crop_pct', ui.leftCrop.value);
-  fd.append('right_crop_pct', ui.rightCrop.value);
-  fd.append('inner_adjust_px', ui.innerAdjust.value);
   if (ui.frontFile.files?.[0]) fd.append('image', ui.frontFile.files[0]);
 
   setLoading(true);
@@ -225,40 +451,51 @@ async function requestFront(){
     if (!j.ok) throw new Error('api front');
 
     // masks
-    ui.mGray.src  = j.masks?.gray  || '';
-    ui.mSil.src   = j.masks?.sil   || '';
-    ui.mInner.src = j.masks?.inner || '';
+    if (ui.mGray)  ui.mGray.src  = j.masks?.gray  || '';
+    if (ui.mSil)   ui.mSil.src   = j.masks?.sil   || '';
+    if (ui.mInner) ui.mInner.src = j.masks?.inner || '';
 
-    // Preview del marco con foto
-    if (j.masks?.gray && j.masks?.frame_mask) {
-      createFramePreview(j.masks.gray, j.masks.frame_mask).catch(e => {
-        console.warn('Error creando preview del marco:', e);
-      });
+    // Canvas interactivo: foto + máscaras de zonas
+    if (j.masks?.color) {
+      const frameSrc = (usePreloaded && PRELOADED?.svg_frame)   ? PRELOADED.svg_frame   : j.masks?.frame_mask || '';
+      const lenteSrc = (usePreloaded && PRELOADED?.svg_glasses) ? PRELOADED.svg_glasses : j.masks?.inner      || '';
+      if (frameSrc && lenteSrc) {
+        await initInteractiveMask(j.masks.color, frameSrc, lenteSrc).catch(e => {
+          console.warn('Error iniciando canvas interactivo:', e);
+        });
+      }
     }
 
     // svgs
     lastFrameSVG = normalizeFrameSVGWhite(j.svgs?.frame || j.svgs?.frame_svg || '');
     lastGlassSVG = (j.svgs?.lenses || j.svgs?.glass_svg || '');
 
-    // Preview
     putSVGPreview(ui.framePrev, lastFrameSVG);
     putSVGPreview(ui.glassPrev, lastGlassSVG);
   }finally{
     setLoading(false);
   }
 }
-ui.btnFrontUpdate.addEventListener('click', ()=>requestFront());
+ui.btnFrontUpdate.addEventListener('click', ()=>requestFront(false));
 
 // Update value displays
 ui.closeR.addEventListener('input', ()=> ui.closeRVal.textContent = ui.closeR.value);
 ui.minArea.addEventListener('input', ()=> ui.minAreaVal.textContent = ui.minArea.value);
-ui.erodeStrength.addEventListener('input', ()=> ui.erodeStrengthVal.textContent = ui.erodeStrength.value);
-ui.distThreshold.addEventListener('input', ()=> ui.distThresholdVal.textContent = ui.distThreshold.value);
-ui.satThreshold.addEventListener('input', ()=> ui.satThresholdVal.textContent = ui.satThreshold.value);
-ui.bottomCrop.addEventListener('input', ()=> ui.bottomCropVal.textContent = ui.bottomCrop.value);
-ui.leftCrop.addEventListener('input', ()=> ui.leftCropVal.textContent = ui.leftCrop.value);
-ui.rightCrop.addEventListener('input', ()=> ui.rightCropVal.textContent = ui.rightCrop.value);
-ui.innerAdjust.addEventListener('input', ()=> ui.innerAdjustVal.textContent = ui.innerAdjust.value);
+
+// Pincel: tamaño
+document.getElementById('brushSize')?.addEventListener('input', e => {
+  const v = document.getElementById('brushSizeVal');
+  if (v) v.textContent = e.target.value;
+});
+// Zoom: nivel
+document.getElementById('zoomLevel')?.addEventListener('input', e => {
+  zoomFactor = parseInt(e.target.value);
+  const v = document.getElementById('zoomLevelVal');
+  if (v) v.textContent = zoomFactor + 'x';
+  if (photoRGBA) renderAll();
+});
+document.getElementById('btnUndo')?.addEventListener('click', undoMaskEdit);
+document.getElementById('btnApplyMask')?.addEventListener('click', applyEditedMask);
 
 // ---------- TEMPLE: pedir al back y mostrar ----------
 async function requestTemple(){
@@ -290,6 +527,11 @@ ui.btnDownloadTemple.addEventListener('click',()=> lastTempleSVG && downloadSVG(
 ui.formSave.addEventListener('submit', async (e)=>{
   e.preventDefault();
 
+  // Si hay máscara pintada, aplicar pincel antes de guardar (por si se olvidó)
+  if (maskPixels) {
+    await applyEditedMask().catch(err => console.warn('applyEditedMask en save:', err));
+  }
+
   if (!lastFrameSVG && !lastGlassSVG && !lastTempleSVG){
     alert('Generá los SVG antes de guardar.');
     return;
@@ -304,7 +546,6 @@ ui.formSave.addEventListener('submit', async (e)=>{
   }
   if (lastGlassSVG){
     const blob = new Blob([lastGlassSVG], { type: 'image/svg+xml' });
-    // *** la ruta espera svg_glasses (plural) ***
     fd.append('svg_glasses', new File([blob], `glasses_${MODEL_ID}.svg`, { type:'image/svg+xml' }));
   }
   if (lastTempleSVG){
@@ -348,21 +589,17 @@ function hideUploadsIfPreloaded(){
 }
 
 window.addEventListener('DOMContentLoaded', async ()=>{
-    
+
   if (MODEL_ID){
     hideUploadsIfPreloaded()
-    document.getElementById('btnFrontUpdate').click();
-    document.getElementById('btnSideUpdate').click();
 
     setLoading(true);
     try {
-        // Pedí SIEMPRE al back; si no subís archivo usa lo del modelo (con fallbacks)
         await requestFront().catch(e => console.warn('Front preload falló', e));
         await requestTemple().catch(e => console.warn('Temple preload falló', e));
     } finally {
         setLoading(false);
     }
   }
- 
-});
 
+});

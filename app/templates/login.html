@@ -1,7 +1,7 @@
 {% extends 'layout.html' %}
 
 {% block css %}
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
 
 {% endblock %}
 
@@ -13,9 +13,9 @@
     <h4 class="mb-3 text-center">Iniciar sesión</h4>
 
     {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <div class="alert alert-danger">{{ messages[0] }}</div>
-      {% endif %}
+    {% if messages %}
+    <div class="alert alert-danger">{{ messages[0] }}</div>
+    {% endif %}
     {% endwith %}
 
     <form method="POST">
@@ -35,4 +35,4 @@
     </form>
   </div>
 
-{% endblock %}
+  {% endblock %}

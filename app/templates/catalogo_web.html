@@ -2,7 +2,7 @@
 
 {% block css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/catalogo.css') }}">
-
+<link rel="stylesheet" href="{{ url_for('static', filename='css/catalogo_web.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -16,7 +16,6 @@
     </li>
     {% endfor %}
   </ul>
-
 </div>
 
 <div class="tab-content px-5" id="tabsCatalogoContent">
@@ -48,7 +47,6 @@
               </a>
             </div>
 
-
           </div>
         </div>
       </div>
@@ -70,25 +68,15 @@
             </button>
           </li>
           {% endfor %}
-
         </ul>
       </div>
 
       <button class="slider-arrow right" id="arrowRight" style="display: none;">&#10095;</button>
     </div>
 
-
   </div>
   {% endfor %}
 </div>
-
-
-<div
-  class="position-fixed bottom-0 start-0 w-100 qrContainer d-flex align-items-center justify-content-between px-3 py-4">
-  <p class="mb-0">Escaneá el QR para navegar por el catálogo y probarte los modelos</p>
-  <img src="{{ url_for('main.qr') }}" alt="QR dinámico" style="height: 200px;">
-</div>
-
 
 
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
@@ -121,161 +109,36 @@
 
   function clickTab(btn) { if (btn) btn.click(); }
 
-  // Auto-advance timer
-  let idleTimer = null;
-  function resetInactivityTimer() {
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(autoAdvance, 3_000); // 3 segundos
-  }
-
-  function autoAdvance() {
-    const catTabs = Array.from(document.querySelectorAll('#tabsCatalogo .nav-link'));
-    const activeCatBtn = getActiveCategoryTabBtn();
-    const catIdx = Math.max(0, catTabs.indexOf(activeCatBtn));
-
-    const activePane = getActiveCategoryPane();
-    if (!activePane) return resetInactivityTimer();
-
-    const prodBtns = Array.from(activePane.querySelectorAll('.tabsCategoria .nav-link'));
-    const activeProdBtn = activePane.querySelector('.tabsCategoria .nav-link.active');
-    const prodIdx = activeProdBtn ? prodBtns.indexOf(activeProdBtn) : 0;
-
-    // Siguiente modelo en la misma categoría, o pasar de categoría si termina
-    if (prodIdx < prodBtns.length - 1) {
-      clickTab(prodBtns[prodIdx + 1]);
-    } else {
-      const nextCatIdx = (catIdx + 1) % catTabs.length;
-      clickTab(catTabs[nextCatIdx]); // activa categoría
-      // activar primer modelo de esa categoría
-      const nextPane = document.querySelector(catTabs[nextCatIdx].getAttribute('data-bs-target') || catTabs[nextCatIdx].dataset.bsTarget);
-      const nextProdBtns = Array.from(nextPane.querySelectorAll('.tabsCategoria .nav-link'));
-      if (nextProdBtns.length) clickTab(nextProdBtns[0]);
-    }
-    resetInactivityTimer();
-  }
-
   // Mostrar flechas del slider (opcional)
   const wrapper = document.querySelector('.tabsCategoria-wrapper');
   const btnLeft = document.getElementById('arrowLeft');
   const btnRight = document.getElementById('arrowRight');
   if (wrapper && btnLeft && btnRight) {
-    //btnLeft.style.display = 'block';
-    //btnRight.style.display = 'block';
     btnLeft.addEventListener('click', () => wrapper.scrollBy({ left: -200, behavior: 'smooth' }));
     btnRight.addEventListener('click', () => wrapper.scrollBy({ left: 200, behavior: 'smooth' }));
   }
 
-  // Centrar siempre que se muestre un subtab (modelo) y resetear timer
+  // Centrar siempre que se muestre un subtab (modelo)
   document.addEventListener('shown.bs.tab', (ev) => {
-    const btn = ev.target; // botón de tab activado
+    const btn = ev.target;
     if (btn.id && btn.id.startsWith('subtab') && btn.classList.contains('nav-link')) {
       centerInWrapper(btn);
-      resetInactivityTimer();
     }
-    // Si se cambió la categoría, centrar el modelo activo de esa categoría
     if (btn.id && btn.id.startsWith('tab') && btn.classList.contains('nav-link')) {
       const pane = document.querySelector(btn.getAttribute('data-bs-target') || btn.dataset.bsTarget);
       const prodActive = pane?.querySelector('.tabsCategoria .nav-link.active') || pane?.querySelector('.tabsCategoria .nav-link');
       if (prodActive) {
-        // asegurar que haya un modelo activo y centrar
         if (!prodActive.classList.contains('active')) clickTab(prodActive);
         centerInWrapper(prodActive);
-        resetInactivityTimer();
       }
     }
   });
-  //------------------ Para control ------------------//
-  function moveNextProduct() {
-    const activePane = getActiveCategoryPane();
-    if (!activePane) return;
 
-    const prodBtns = Array.from(activePane.querySelectorAll('.tabsCategoria .nav-link'));
-    if (!prodBtns.length) return;
-
-    const activeInPane = activePane.querySelector('.tabsCategoria .nav-link.active') || prodBtns[0];
-    const idx = prodBtns.indexOf(activeInPane);
-    const nextIdx = (idx + 1) % prodBtns.length;
-
-    clickTab(prodBtns[nextIdx]);
-  }
-
-  function movePrevProduct() {
-    const activePane = getActiveCategoryPane();
-    if (!activePane) return;
-
-    const prodBtns = Array.from(activePane.querySelectorAll('.tabsCategoria .nav-link'));
-    if (!prodBtns.length) return;
-
-    const activeInPane = activePane.querySelector('.tabsCategoria .nav-link.active') || prodBtns[0];
-    const idx = prodBtns.indexOf(activeInPane);
-    const prevIdx = (idx - 1 + prodBtns.length) % prodBtns.length;
-
-    clickTab(prodBtns[prevIdx]);
-  }
-
-  function moveNextCategory() {
-    const catBtns = Array.from(document.querySelectorAll('#tabsCatalogo .nav-link'));
-    if (!catBtns.length) return;
-
-    const activeCatBtn = getActiveCategoryTabBtn() || catBtns[0];
-    const idx = catBtns.indexOf(activeCatBtn);
-    const nextIdx = (idx + 1) % catBtns.length;
-
-    clickTab(catBtns[nextIdx]); // tu handler shown.bs.tab activa/centra el primer modelo
-  }
-
-  function movePrevCategory() {
-    const catBtns = Array.from(document.querySelectorAll('#tabsCatalogo .nav-link'));
-    if (!catBtns.length) return;
-
-    const activeCatBtn = getActiveCategoryTabBtn() || catBtns[0];
-    const idx = catBtns.indexOf(activeCatBtn);
-    const prevIdx = (idx - 1 + catBtns.length) % catBtns.length;
-
-    clickTab(catBtns[prevIdx]);
-  }
-  //------------------ Eventos ------------------//
-  // Socket: seleccionar y centrar al llegar evento, y resetear timer
-  const socket = io();
-
-  // Inicializar: centrar el activo al cargar y arrancar timer
+  // Inicializar: centrar el activo al cargar
   window.addEventListener('load', () => {
     const initial = getActiveProductBtn();
     if (initial) centerInWrapper(initial);
-    resetInactivityTimer();
   });
-  socket.on("actualizar_producto", data => {
-    console.log("Mover catalogo:", data);
-    if (data.direccion === "izquierda") {
-      movePrevProduct();
-    } else if (data.direccion === "derecha") {
-      moveNextProduct();
-    }
-  });
-  socket.on("actualizar_categoria", data => {
-    console.log("Mover categoria:", data);
-    if (data.direccion === "izquierda") {
-      movePrevCategory();
-    } else if (data.direccion === "derecha") {
-      moveNextCategory();
-    }
-  });
-
-  socket.on("solicitar_modelo_activo", () => {
-    console.log("Catalogo recibio solicitar_modelo_activo");
-    const activePane = getActiveCategoryPane();
-    console.log("activePane:", activePane);
-    if (!activePane) return;
-    const activeSubPane = activePane.querySelector('.tab-pane.show.active');
-    console.log("activeSubPane:", activeSubPane);
-    if (!activeSubPane) return;
-    const probarLink = activeSubPane.querySelector('a.btn.btn-primary');
-    console.log("probarLink:", probarLink);
-    if (probarLink) window.location.href = probarLink.getAttribute('href');
-  });
-
 </script>
-
-
 
 {% endblock %}

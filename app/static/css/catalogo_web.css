@@ -1,0 +1,42 @@
+/* Overrides para la vista web (PC/celular) — se carga sobre catalogo.css */
+
+/* Restaurar header chico (catalogo.css lo resetea a auto) */
+header img {
+  height: 60px;
+  width: auto;
+  display: block;
+  padding: 8px 16px;
+}
+
+/* En desktop: imagen y descripción lado a lado */
+@media (min-width: 768px) {
+  .producto {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+  }
+
+  .imagen_producto {
+    width: 40%;
+    flex-shrink: 0;
+    margin-top: 0;
+  }
+
+  .bloque_flecha_descripcion {
+    width: 60%;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .descripcion {
+    width: 100%;
+  }
+}
+
+/* En mobile: igual al original, solo reducimos el aspect-ratio de la imagen para q no ocupe todo */
+@media (max-width: 767px) {
+  .imagen_producto {
+    width: 80%;
+    aspect-ratio: 4/3;
+  }
+}
