@@ -178,36 +178,11 @@
             </div>
           </div>
         </div>
-        <div class="col-md-6">
-          <h4>Recortes adaptativos</h4>
-          <div class="row">
-            <div style="flex:1">
-              <label>Recorte inferior (%) <span id="bottomCropVal">0</span></label>
-              <input id="bottomCrop" type="range" min="0" max="100" step="1" value="0" />
-            </div>
-          </div>
-          <div class="row">
-            <div style="flex:1">
-              <label>Recorte izquierdo (%) <span id="leftCropVal">0</span></label>
-              <input id="leftCrop" type="range" min="0" max="50" step="1" value="0" />
-            </div>
-            <div style="flex:1">
-              <label>Recorte derecho (%) <span id="rightCropVal">0</span></label>
-              <input id="rightCrop" type="range" min="0" max="50" step="1" value="0" />
-            </div>
-          </div>
-          <div class="row">
-            <div style="flex:1">
-              <label>Ajuste interior (px) <span id="innerAdjustVal">0</span></label>
-              <input id="innerAdjust" type="range" min="-30" max="30" step="1" value="0" />
-              <small style="color:#888; font-size:11px;">+ = más marco, - = más lente</small>
-            </div>
-          </div>
-        </div>
       </div>
 
       <div class="row">
-        <button id="btnFrontUpdate">Actualizar máscaras (servidor)</button>
+        <button id="btnFrontUpdate">Restablecer con parámetros</button>
+        <button id="btnApplyMask">Aplicar pincel</button>
       </div>
 
       <div class="row">
@@ -265,26 +240,68 @@
 
   <main>
     <h3>Máscaras (servidor)</h3>
-    <div class="row">
+
+    <!-- Toolbar del pincel — visible al cargar las máscaras -->
+    <div id="brushToolbar" style="display:none; margin-bottom:8px; padding:6px 10px; background:#1e1e1e; border-radius:4px; border:1px solid #333;">
+      <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; font-size:11px;">
+        <span style="color:#aaa; font-weight:bold;">Pincel:</span>
+        <label style="color:#ff7070; display:flex; align-items:center; gap:3px; cursor:pointer; margin:0;">
+          <input type="radio" name="brushMode" value="marco" checked> Marco
+        </label>
+        <label style="color:#70cfff; display:flex; align-items:center; gap:3px; cursor:pointer; margin:0;">
+          <input type="radio" name="brushMode" value="lente"> Lente
+        </label>
+        <label style="color:#888; display:flex; align-items:center; gap:3px; cursor:pointer; margin:0;">
+          <input type="radio" name="brushMode" value="fondo"> Fondo
+        </label>
+        <label style="color:#ccc; display:flex; align-items:center; gap:4px; margin:0;">
+          Pincel: <span id="brushSizeVal">8</span>px
+          <input type="range" id="brushSize" min="1" max="12" value="8" style="width:65px; margin:0 2px;">
+        </label>
+        <label style="color:#ccc; display:flex; align-items:center; gap:4px; margin:0;">
+          Zoom: <span id="zoomLevelVal">4x</span>
+          <input type="range" id="zoomLevel" min="2" max="12" step="1" value="4" style="width:65px; margin:0 2px;">
+        </label>
+        <button id="btnUndo" style="padding:3px 8px; font-size:11px;">↩ Deshacer</button>
+      </div>
+      <div style="margin-top:4px; font-size:10px; color:#555;">
+        <span style="color:#ff7070;">■ Marco</span> = aro/puente &nbsp;|&nbsp;
+        <span style="color:#70cfff;">■ Lente</span> = vidrio &nbsp;|&nbsp;
+        <span style="color:#444;">■ Fondo</span> = excluido de ambos SVGs &nbsp;·&nbsp;
+        <span style="color:#ffe066;">□ recuadro amarillo</span> = clic/drag en vista normal para mover zona de zoom
+      </div>
+    </div>
+
+    <!-- Fila de edición: vista normal (mover zoom) + zoom (pintar) -->
+    <div class="row" style="margin-bottom:8px; align-items:stretch;">
+      <div class="col-md" style="flex:1; min-width:200px;">
+        <h4 style="color:#ffe066;">Vista normal — clic para mover zoom</h4>
+        <div class="mask" style="background:#000; display:grid; place-items:center;">
+          <canvas id="framePreviewCanvas" style="max-width:100%; max-height:300px; width:auto; height:auto; display:block;"></canvas>
+        </div>
+      </div>
+      <div class="col-md" style="flex:1; min-width:200px;">
+        <h4 style="color:#70cfff;">Zoom — pintá aquí</h4>
+        <div class="mask" style="background:#111; display:grid; place-items:center;">
+          <canvas id="zoomCanvas" width="420" height="420"
+            style="max-width:100%; max-height:300px; width:auto; height:auto; display:block; image-rendering:pixelated;"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fila de referencia: máscaras -->
+    <div class="row" style="margin-top:4px;">
       <div class="col-md" style="flex:1">
         <h4>Foto original</h4>
         <div class="mask"><img id="mGray" alt=""></div>
       </div>
       <div class="col-md" style="flex:1">
-        <h4>Preview Marco (con foto)</h4>
-        <div class="mask" style="position:relative; background:#000; display:grid; place-items:center;">
-          <canvas id="framePreviewCanvas" style="max-width:100%; max-height:260px; width:auto; height:auto; display:block;"></canvas>
-        </div>
-      </div>
-    </div>
-    <div class="row" style="margin-top:10px">
-      <div class="col-md" style="flex:1">
-        <h4>Silueta</h4>
-        <div class="mask"><img id="mSil" alt=""></div>
+        <h4 style="color:#ff7070;">Marco final</h4>
+        <div class="mask"><img id="mMarcoFinal" alt="" style="opacity:0.3;"><span id="mMarcoFinalHint" style="color:#555;font-size:10px;position:absolute;">presioná "Actualizar SVGs"</span></div>
       </div>
       <div class="col-md" style="flex:1">
-        <h4>Interior (vidrios)</h4>
-        <div class="mask"><img id="mInner" alt=""></div>
+        <h4 style="color:#70cfff;">Lente final</h4>
+        <div class="mask" style="position:relative;"><img id="mLenteFinal" alt="" style="opacity:0.3;"><span id="mLenteFinalHint" style="color:#555;font-size:10px;position:absolute;">presioná "Actualizar SVGs"</span></div>
       </div>
     </div>
   </main>
@@ -293,8 +310,10 @@
 <script>
   const MODEL_ID = {{ model_id|tojson }};
   const PRELOADED = {
-    front:  {{ front_img_url|default('')|tojson }},
-    temple: {{ temple_img_url|default('')|tojson }}
+    front:       {{ front_img_url|default('')|tojson }},
+    temple:      {{ temple_img_url|default('')|tojson }},
+    svg_frame:   {{ svg_frame_url|default('')|tojson }},
+    svg_glasses: {{ svg_glasses_url|default('')|tojson }}
   };
 </script>
 

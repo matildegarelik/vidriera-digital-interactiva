@@ -8,7 +8,7 @@ import qrcode,io
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 import os, random, shutil,tempfile,json,uuid, base64
-from .utils import caracterizar_lente_reducida, norm, _maybe_replace,_load_model_image_or_upload,_front_segmentation_vb,_temple_segmentation_vb
+from .utils import caracterizar_lente_reducida, norm, _maybe_replace,_load_model_image_or_upload,_front_segmentation_vb,_temple_segmentation_vb,_b64_png_dataurl,_mask_to_svg
 import numpy as np
 import cv2 as cv
 from pathlib import Path
@@ -51,6 +51,33 @@ def catalogo():
         cat.modelos = modelos_ordenados[:10]
 
     return render_template('catalogo.html', categorias=categorias)
+
+
+@main.route('/catalogo-web')
+def catalogo_web():
+    categorias = (
+        db.session.query(Categoria)
+        .join(oc_product_to_category, oc_product_to_category.c.category_id == Categoria.category_id)
+        .join(Producto, Producto.product_id == oc_product_to_category.c.product_id)
+        .join(Model, Model.product_id == Producto.product_id)
+        .options(
+            joinedload(Categoria.productos).joinedload(Producto.descripcion),
+            joinedload(Categoria.productos).joinedload(Producto.ar_model),
+        )
+        .filter(Model.visible.is_(True))
+        .distinct()
+        .all()
+    )
+
+    for cat in categorias:
+        modelos_visibles_query = [
+            p.ar_model for p in cat.productos
+            if p.ar_model is not None and p.ar_model.visible
+        ]
+        modelos_ordenados = sorted(modelos_visibles_query, key=lambda m: m.sort_order)
+        cat.modelos = modelos_ordenados[:10]
+
+    return render_template('catalogo_web.html', categorias=categorias)
 
 
 @main.route('/control')
@@ -415,15 +442,19 @@ def imgs_to_svg(model_id):
             "redirect": url_for('main.lente_modelo', lente_id=model_id)
         })
 
-    # GET: pre-cargar las flattened si existen
-    front_img_url  = url_for('main.uploads', filename=norm(m.path_to_img_front_flattened))  if m.path_to_img_front_flattened  else ''
-    temple_img_url = url_for('main.uploads', filename=norm(m.path_to_img_temple_flattened)) if m.path_to_img_temple_flattened else ''
+    # GET: pre-cargar las flattened y SVGs si existen
+    front_img_url   = url_for('main.uploads', filename=norm(m.path_to_img_front_flattened))  if m.path_to_img_front_flattened  else ''
+    temple_img_url  = url_for('main.uploads', filename=norm(m.path_to_img_temple_flattened)) if m.path_to_img_temple_flattened else ''
+    svg_frame_url   = url_for('main.uploads', filename=norm(m.path_to_svg_frame))   if m.path_to_svg_frame   else ''
+    svg_glasses_url = url_for('main.uploads', filename=norm(m.path_to_svg_glasses)) if m.path_to_svg_glasses else ''
 
     return render_template(
         'helpers_admin/index0.html',
         model_id=model_id,
         front_img_url=front_img_url,
-        temple_img_url=temple_img_url
+        temple_img_url=temple_img_url,
+        svg_frame_url=svg_frame_url,
+        svg_glasses_url=svg_glasses_url,
     )
 
 
@@ -557,10 +588,11 @@ def api_seg_b_front():
             "ok": True,
             "masks": {
                 "gray":  out["gray"],
+                "color": _b64_png_dataurl(cv.cvtColor(img, cv.COLOR_BGR2RGB)),
                 "edges": out["edges"],
                 "sil":   out["sil"],
                 "inner": out["inner"],
-                "frame_mask": out["frame_mask"],  # Máscara PNG del marco para preview
+                "frame_mask": out["frame_mask"],
             },
             "svgs": {
                 "frame":  out["svg_frame"],
@@ -569,6 +601,26 @@ def api_seg_b_front():
         })
     except Exception as e:
         return jsonify({"ok": False, "error": "proc_error", "detail": str(e)}), 500
+
+@main.route("/_admin_helpers/api/seg_b/apply_mask", methods=['POST'])
+def api_seg_b_apply_mask():
+    """Genera SVG de marco desde una máscara PNG editada manualmente en el cliente."""
+    data = request.get_json(force=True) or {}
+    b64 = data.get('mask_b64', '')
+    if not b64:
+        return jsonify({"ok": False, "error": "no_mask"}), 400
+    try:
+        _, encoded = b64.split(',', 1)
+        img_bytes = base64.b64decode(encoded)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        mask = cv.imdecode(nparr, cv.IMREAD_GRAYSCALE)
+        if mask is None:
+            return jsonify({"ok": False, "error": "decode_error"}), 400
+        mask = (mask > 128).astype(np.uint8) * 255
+        svg = _mask_to_svg(mask)
+        return jsonify({"ok": True, "svg_frame": svg})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @main.route("/_admin_helpers/api/seg_b/temple/", methods=['POST'])
 def api_seg_b_temple():

@@ -4,6 +4,13 @@ header{
     width: 100%;
 }
 
+header img {
+    height: 60px;
+    width: auto;
+    display: block;
+    padding: 8px 16px;
+}
+
 .btn-primary{
     background-color: var(--main-color);
     border-color: var(--main-color)
