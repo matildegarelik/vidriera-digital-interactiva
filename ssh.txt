@@ -1,0 +1,1 @@
+C:\Herramientas\cloudflared.exe access ssh --hostname ssh-vidriera.micompravirtual.com.ar --url localhost:2222
