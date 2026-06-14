@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>{% block tech_title %}Lab – etiquetado{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/panel_admin.css') }}">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 8px; background:#0b0b0b; color:#ddd; font-family: system-ui, sans-serif; }
+    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 12px; }
+    @media (max-width: 1024px) { .grid { grid-template-columns: 1fr; } }
+    aside { overflow-y: auto; max-height: calc(100vh - 16px); padding-right: 8px; }
+    h3 { margin: 8px 0 4px; font-size: 15px; }
+    h4 { margin: 6px 0 3px; font-size: 12px; color:#aaa; }
+    label { font-size: 12px; display:block; margin-bottom: 2px; }
+    .grp { border:1px solid #222; border-radius:8px; padding:10px; margin-bottom:10px; background:#121212; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:6px; }
+    input[type="range"] { width:100%; }
+    button { padding:6px 10px; font-size:12px; cursor:pointer; border-radius:6px; border:1px solid #333; background:#1d1d1d; color:#eee; }
+    button.primary { background:#0d6efd; border-color:#0d6efd; color:#fff; }
+    .mask { background:#000; border:1px solid #222; border-radius:6px; min-height:200px; height:300px; display:grid; place-items:center; overflow:hidden; position:relative; }
+    .mask img, .mask canvas { max-width:100%; max-height:290px; width:auto; height:auto; display:block; }
+    .previewBox { background:#0f0f0f; border:1px solid #222; border-radius:6px; height:90px; display:grid; place-items:center; overflow:hidden; }
+    iframe.svgPrev { width:100%; height:90px; border:0; }
+    #labTimer { font-weight:bold; color:#ffe066; }
+    .brushbar label { display:inline-flex; align-items:center; gap:4px; margin-right:8px; }
+    .hint { font-size:11px; color:#888; }
+    a.back { color:#7aa7ff; font-size:12px; }
+  </style>
+</head>
+<body>
+<div id="loader" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9999; align-items:center; justify-content:center;">
+  <div class="loader"><div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div>
+  <span style="color:#fff">Procesando…</span></div>
+</div>
+
+<div class="grid">
+  <aside>
+    <div class="row" style="justify-content:space-between;">
+      {% if show_lab_nav|default(true) %}
+        <a class="back" href="{{ url_for('main.lab_index', model_id=model_id) }}">&larr; Comparar técnicas</a>
+      {% else %}
+        <a class="back" href="{{ url_for('main.lente_modelo', lente_id=model_id) }}">&larr; Volver al modelo</a>
+      {% endif %}
+      <span>⏱ <span id="labTimer">0.0 s</span></span>
+    </div>
+
+    <!-- Clase activa (común) -->
+    <div class="grp">
+      <h3>Pintar como</h3>
+      <div class="row brushbar">
+        <label style="color:#ff7070;"><input type="radio" name="brushMode" value="marco" checked> Marco</label>
+        <label style="color:#70cfff;"><input type="radio" name="brushMode" value="lente"> Lente</label>
+        <label style="color:#888;"><input type="radio" name="brushMode" value="fondo"> Fondo</label>
+      </div>
+    </div>
+
+    <!-- Panel específico de la técnica -->
+    {% block tech_panel %}{% endblock %}
+
+    <!-- Herramienta del canvas de zoom + pincel fallback (común) -->
+    <div class="grp">
+      <h3>Herramienta (canvas de zoom)</h3>
+      <div class="row brushbar">
+        <label><input type="radio" name="labTool" value="tecnica" checked> Técnica</label>
+        <label><input type="radio" name="labTool" value="pincel"> Pincel fino</label>
+      </div>
+      <p class="hint">El canvas <b>izquierdo</b> mueve la zona de zoom.
+         En el canvas <b>derecho (zoom)</b> actuás con la herramienta elegida.</p>
+      <label>Grosor pincel <span id="brushSizeVal">8</span>px</label>
+      <input id="brushSize" type="range" min="1" max="20" value="8">
+      <label>Zoom <span id="zoomLevelVal">4x</span></label>
+      <input id="zoomLevel" type="range" min="2" max="12" step="1" value="4">
+      <div class="row"><button id="btnUndo">↩ Deshacer</button></div>
+    </div>
+
+    <!-- Suavizado del marco (apertura morfológica) -->
+    <div class="grp">
+      <h3>Suavizado del marco</h3>
+      <p class="hint">Apertura morfológica: redondea/suaviza los bordes rugosos del marco
+         antes de vectorizar. Afecta la vista previa y el SVG guardado.</p>
+      <label>Apertura (radio) <span id="frameOpenVal">0</span>px</label>
+      <input id="frameOpen" type="range" min="0" max="8" step="1" value="0">
+      <label>Cierre (radio) <span id="frameCloseVal">0</span>px</label>
+      <input id="frameClose" type="range" min="0" max="8" step="1" value="0">
+    </div>
+
+    <!-- Segmentación de patillas (lateral) -->
+    <div class="grp">
+      <h3>Patillas (lateral)</h3>
+      <p class="hint">Afiná la segmentación de la patilla y previsualizá antes de guardar.</p>
+      <label>Cierre de bordes <span id="tplCloseVal">7</span></label>
+      <input id="tplClose" type="range" min="0" max="25" step="1" value="7">
+      <label>Área mínima <span id="tplMinAreaVal">800</span></label>
+      <input id="tplMinArea" type="range" min="100" max="5000" step="50" value="800">
+      <div class="row"><button id="tplUpdate">Actualizar patilla</button></div>
+      <div id="templePreview" class="previewBox" style="height:140px;"></div>
+    </div>
+
+    <div class="grp">
+      <h3>Guardar</h3>
+      <button id="btnSave" class="primary">Guardar en modelo</button>
+      <span id="saveMsg" class="hint"></span>
+    </div>
+  </aside>
+
+  <main>
+    <div class="row" style="align-items:stretch;">
+      <div style="flex:1; min-width:240px;">
+        <h4 style="color:#ffe066;">Vista normal — clic para mover zoom / técnica</h4>
+        <div class="mask"><canvas id="framePreviewCanvas"></canvas></div>
+      </div>
+      <div style="flex:1; min-width:240px;">
+        <h4 style="color:#70cfff;">Zoom — pincel fino</h4>
+        <div class="mask"><canvas id="zoomCanvas" width="420" height="420" style="image-rendering:pixelated;"></canvas></div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:6px;">
+      <div style="flex:1;"><h4>Foto original</h4><div class="mask"><img id="mGray" alt=""></div></div>
+      <div style="flex:1;"><h4 style="color:#ff7070;">Marco (vista previa en vivo)</h4><div class="mask"><canvas id="mMarcoFinal"></canvas></div></div>
+      <div style="flex:1;"><h4 style="color:#70cfff;">Lente (vista previa en vivo)</h4><div class="mask"><canvas id="mLenteFinal"></canvas></div></div>
+    </div>
+  </main>
+</div>
+
+<script>
+  window.MODEL_ID = {{ model_id|tojson }};
+  window.PRELOADED = {
+    front:       {{ front_img_url|default('')|tojson }},
+    temple:      {{ temple_img_url|default('')|tojson }},
+    svg_frame:   {{ svg_frame_url|default('')|tojson }},
+    svg_glasses: {{ svg_glasses_url|default('')|tojson }}
+  };
+</script>
+{% block tech_script %}{% endblock %}
+</body>
+</html>

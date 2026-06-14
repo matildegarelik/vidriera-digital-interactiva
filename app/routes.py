@@ -9,6 +9,7 @@ from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 import os, random, shutil,tempfile,json,uuid, base64
 from .utils import caracterizar_lente_reducida, norm, _maybe_replace,_load_model_image_or_upload,_front_segmentation_vb,_temple_segmentation_vb,_b64_png_dataurl,_mask_to_svg
+from .utils import lab_superpixels_payload, _scribble_watershed, _sam_embed, _sam_decode
 import numpy as np
 import cv2 as cv
 from pathlib import Path
@@ -455,19 +456,12 @@ def imgs_to_svg(model_id):
             "redirect": url_for('main.lente_modelo', lente_id=model_id)
         })
 
-    # GET: pre-cargar las flattened y SVGs si existen
-    front_img_url   = url_for('main.uploads', filename=norm(m.path_to_img_front_flattened))  if m.path_to_img_front_flattened  else ''
-    temple_img_url  = url_for('main.uploads', filename=norm(m.path_to_img_temple_flattened)) if m.path_to_img_temple_flattened else ''
-    svg_frame_url   = url_for('main.uploads', filename=norm(m.path_to_svg_frame))   if m.path_to_svg_frame   else ''
-    svg_glasses_url = url_for('main.uploads', filename=norm(m.path_to_svg_glasses)) if m.path_to_svg_glasses else ''
-
+    # GET: vista principal = varita mágica (auto-seg al inicio + ajuste con lápiz),
+    # sin la navegación del laboratorio de comparación.
     return render_template(
-        'helpers_admin/index0.html',
-        model_id=model_id,
-        front_img_url=front_img_url,
-        temple_img_url=temple_img_url,
-        svg_frame_url=svg_frame_url,
-        svg_glasses_url=svg_glasses_url,
+        'helpers_admin/lab_floodfill.html',
+        show_lab_nav=False,
+        **_lab_common_ctx(m, model_id),
     )
 
 
@@ -493,6 +487,15 @@ def svgs_to_glb(model_id):
         glb_fs.save(outpath)
 
         m.path_to_glb = str(Path("models") / final_name)
+
+        # Config de render/iluminación elegida en el armador (lo que no viaja en el GLB)
+        rc = request.form.get('render_config')
+        if rc:
+            try:
+                m.render_config = json.loads(rc)
+            except Exception:
+                pass
+
         db.session.commit()
 ##ACA CAMBIEE
         # devolvemos a dónde ir luego
@@ -509,8 +512,9 @@ def svgs_to_glb(model_id):
 
     pol_info = m.polarization_info or '{}'
 
-    return render_template('helpers_admin/index1.html', front_img_url=front_img_url, temple_img_url=temple_img_url, 
-        marco_url=marco_url,lentes_url=lentes_url,pat_url=pat_url, polarization_info=pol_info)
+    return render_template('helpers_admin/index1.html', front_img_url=front_img_url, temple_img_url=temple_img_url,
+        marco_url=marco_url,lentes_url=lentes_url,pat_url=pat_url, polarization_info=pol_info,
+        render_config=(m.render_config or {}))
 
 @main.route('/glb-a-cara/<int:model_id>', methods=['GET', 'POST'])
 def glb_a_cara(model_id):
@@ -715,4 +719,132 @@ def update_order():
         current_app.logger.error(f"Error updating order: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 # --- FIN RUTA NUEVA ---
+
+
+# =====================================================================
+# === LABORATORIO de técnicas de etiquetado marco/lente/fondo =========
+# =====================================================================
+# Páginas separadas para comparar técnicas que aceleran el pintado manual
+# de la página imgs_to_svg. Todas terminan en el mismo SVG (vía el POST de
+# imgs_to_svg) para que la comparación sea justa.
+
+def _lab_common_ctx(m, model_id):
+    return dict(
+        model_id=model_id,
+        front_img_url=url_for('main.uploads', filename=norm(m.path_to_img_front_flattened)) if m.path_to_img_front_flattened else '',
+        temple_img_url=url_for('main.uploads', filename=norm(m.path_to_img_temple_flattened)) if m.path_to_img_temple_flattened else '',
+        svg_frame_url=url_for('main.uploads', filename=norm(m.path_to_svg_frame)) if m.path_to_svg_frame else '',
+        svg_glasses_url=url_for('main.uploads', filename=norm(m.path_to_svg_glasses)) if m.path_to_svg_glasses else '',
+    )
+
+
+@main.route("/_admin_helpers/lab/<int:model_id>")
+def lab_index(model_id):
+    m = db.session.get(Model, model_id)
+    if not m:
+        abort(404)
+    return render_template('helpers_admin/lab_index.html', model_id=model_id)
+
+
+@main.route("/_admin_helpers/lab/floodfill/<int:model_id>")
+def lab_floodfill(model_id):
+    m = db.session.get(Model, model_id)
+    if not m:
+        abort(404)
+    return render_template('helpers_admin/lab_floodfill.html', **_lab_common_ctx(m, model_id))
+
+
+@main.route("/_admin_helpers/lab/combinado/<int:model_id>")
+def lab_combinado(model_id):
+    m = db.session.get(Model, model_id)
+    if not m:
+        abort(404)
+    return render_template('helpers_admin/lab_combinado.html', **_lab_common_ctx(m, model_id))
+
+
+@main.route("/_admin_helpers/lab/superpixels/<int:model_id>")
+def lab_superpixels(model_id):
+    m = db.session.get(Model, model_id)
+    if not m:
+        abort(404)
+    return render_template('helpers_admin/lab_superpixels.html', **_lab_common_ctx(m, model_id))
+
+
+@main.route("/_admin_helpers/lab/sam/<int:model_id>")
+def lab_sam(model_id):
+    m = db.session.get(Model, model_id)
+    if not m:
+        abort(404)
+    return render_template('helpers_admin/lab_sam.html', **_lab_common_ctx(m, model_id))
+
+
+# ---------------------- APIs del laboratorio ----------------------
+@main.route("/_admin_helpers/api/lab/superpixels", methods=['POST'])
+def api_lab_superpixels():
+    region_size = request.form.get('region_size', default=25, type=int)
+    ruler = request.form.get('ruler', default=20.0, type=float)
+    model_id = request.form.get('model_id')
+    upload_fs = request.files.get('image')
+    try:
+        m = db.session.get(Model, model_id)
+        img = _load_model_image_or_upload(
+            m, 'path_to_img_front_flattened', upload_fs, fallbacks=('path_to_img_front',)
+        )
+        if img is None:
+            return jsonify({"ok": False, "error": "no_image"}), 400
+        payload = lab_superpixels_payload(img, region_size=region_size, ruler=ruler)
+        payload["ok"] = True
+        return jsonify(payload)
+    except Exception as e:
+        return jsonify({"ok": False, "error": "proc_error", "detail": str(e)}), 500
+
+
+@main.route("/_admin_helpers/api/lab/scribble_seg", methods=['POST'])
+def api_lab_scribble_seg():
+    data = request.get_json(silent=True) or {}
+    model_id = data.get('model_id')
+    seeds = data.get('seeds') or {}
+    radius = int(data.get('radius', 6))
+    use_auto = bool(data.get('use_auto', True))
+    try:
+        m = db.session.get(Model, model_id)
+        img = _load_model_image_or_upload(
+            m, 'path_to_img_front_flattened', None, fallbacks=('path_to_img_front',)
+        )
+        if img is None:
+            return jsonify({"ok": False, "error": "no_image"}), 400
+        label_png = _scribble_watershed(img, seeds, radius=radius, use_auto=use_auto)
+        return jsonify({"ok": True, "label_png": label_png})
+    except Exception as e:
+        return jsonify({"ok": False, "error": "proc_error", "detail": str(e)}), 500
+
+
+@main.route("/_admin_helpers/api/lab/sam/embed", methods=['POST'])
+def api_lab_sam_embed():
+    model_id = request.form.get('model_id')
+    upload_fs = request.files.get('image')
+    try:
+        m = db.session.get(Model, model_id)
+        img = _load_model_image_or_upload(
+            m, 'path_to_img_front_flattened', upload_fs, fallbacks=('path_to_img_front',)
+        )
+        if img is None:
+            return jsonify({"ok": False, "error": "no_image"}), 400
+        _sam_embed(model_id, img)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": "sam_error", "detail": str(e)}), 500
+
+
+@main.route("/_admin_helpers/api/lab/sam/decode", methods=['POST'])
+def api_lab_sam_decode():
+    data = request.get_json(silent=True) or {}
+    model_id = data.get('model_id')
+    points = data.get('points') or []
+    labels = data.get('labels') or [1] * len(points)
+    try:
+        res = _sam_decode(model_id, points, labels)
+        return jsonify({"ok": True, "mask_png": res["mask_png"], "debug": res["debug"]})
+    except Exception as e:
+        return jsonify({"ok": False, "error": "sam_error", "detail": str(e)}), 500
 

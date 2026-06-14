@@ -1,0 +1,22 @@
+{% extends 'helpers_admin/_lab_base.html' %}
+{% block tech_title %}Lab – Varita mágica{% endblock %}
+
+{% block tech_panel %}
+<div class="grp">
+  <h3>🪣 Varita mágica</h3>
+  <p class="hint">Elegí marco/lente/fondo y hacé <b>clic en el canvas de zoom</b> (derecha)
+     sobre la zona a rellenar. Rellena los píxeles de color parecido. Movés el zoom desde el canvas izquierdo.</p>
+  <label>Tolerancia <span id="ffTolVal">28</span></label>
+  <input id="ffTol" type="range" min="2" max="120" step="1" value="28">
+  <div class="row">
+    <label style="display:inline-flex; gap:6px; align-items:center;">
+      <input type="checkbox" id="ffGlobal"> Global (toda la imagen, sin contigüidad)
+    </label>
+  </div>
+  <div class="row"><button id="ffReset">Volver a auto-segmentación</button></div>
+</div>
+{% endblock %}
+
+{% block tech_script %}
+<script type="module" src="{{ url_for('static', filename='js/lab_floodfill.js') }}"></script>
+{% endblock %}

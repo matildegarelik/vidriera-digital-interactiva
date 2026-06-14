@@ -110,6 +110,10 @@ class Model(db.Model):
 
     config_for_display = db.Column(JSON, nullable=True)
 
+    # Config de render/iluminación del armador 3D (fondo, exposición, luces, entorno).
+    # Lo que no viaja en el GLB estándar se guarda acá para que los visores lo repliquen.
+    render_config = db.Column(JSON, nullable=True)
+
     sort_order = db.Column(db.Integer, default=0, nullable=False, index=True)
 
     product = db.relationship("Producto", back_populates="ar_model", uselist=False)

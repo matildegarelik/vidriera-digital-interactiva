@@ -131,6 +131,13 @@
                               {}
                             {% endif %};
 
+      // === Config de render/iluminación elegida en el armador 3D ===
+      const RC = {% if ar_model and ar_model.render_config %}
+                   {{ ar_model.render_config | tojson }}
+                 {% else %}
+                   {}
+                 {% endif %};
+
       // === URL para guardado en servidor / ID del modelo (si aplica) ===
       const SAVE_URL = "{{ url_for('main.glb_a_cara', model_id=ar_model.model_id) }}";
       const MODEL_ID = {% if ar_model %} {{ ar_model.model_id }} {% else %} null {% endif %};
@@ -284,17 +291,24 @@
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1;
+      renderer.toneMappingExposure = RC.exposure ?? 1;
 
       // escena y cámara
       const scene = new THREE.Scene();
+
+      // Entorno (IBL) para reflejos coherentes con el armador
+      {
+        const { RoomEnvironment } = await import("three/examples/jsm/environments/RoomEnvironment.js");
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      }
 
       const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2000);
       camera.position.z = 10;
 
       // Luces
-      scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-      const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+      scene.add(new THREE.AmbientLight(0xffffff, RC.ambient ?? 0.85));
+      const dir = new THREE.DirectionalLight(0xffffff, RC.directional ?? 0.6);
       dir.position.set(0.5, 1, 1);
       scene.add(dir);
 
@@ -339,6 +353,16 @@
         const sceneNode = gltf.scene || gltf.scenes?.[0];
         model.add(sceneNode);
         hardenMaterials(sceneNode);
+        // Entorno (reflejos) por parte; rugosidad/metalness ya vienen horneados en el GLB
+        const _PBR = { front:'marco', glass:'lentes', side:'patilla' };
+        const _fx = RC.fx || {};
+        sceneNode.traverse(o => {
+          if (!o.isMesh || !o.material) return;
+          const part = _PBR[o.userData?.role];
+          const env = (part && _fx[part] && _fx[part].env != null) ? _fx[part].env : (RC.envIntensity ?? 1);
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach(m => { if (m) { m.envMapIntensity = env; m.needsUpdate = true; } });
+        });
         const dims = centerAndMeasure(sceneNode);
         baseWidthPx = Math.max(1, dims.width);
         ui.baseW.textContent = `${baseWidthPx.toFixed(0)}`;

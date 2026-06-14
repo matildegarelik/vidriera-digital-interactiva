@@ -1,95 +1,13 @@
 // --- util ---
-
-function setLoading(on){
-  const el = document.getElementById('loader');
-  if (el) el.style.display = on ? 'flex' : 'none';
-}
-function putSVGPreview(containerId, svgText){
-  const el = document.getElementById(containerId);
-  if(!el) return;
-  el.innerHTML = '';
-  if (!svgText) return;
-  const iframe = document.createElement('iframe');
-  iframe.className = 'svgPrev';
-  iframe.srcdoc = `<html><head><meta charset="utf-8"><style>
-    html,body{margin:0;height:100%;background:#0f0f0f}
-    svg{max-width:100%;max-height:100%;display:block;margin:auto}
-  </style></head><body>${svgText}</body></html>`;
-  el.appendChild(iframe);
-}
-function downloadSVG(text, name){
-  const blob = new Blob([text], {type:'image/svg+xml'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = name; a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href), 400);
-}
-async function postFormData(url, formData){
-  const r = await fetch(url, { method:'POST', body: formData });
-  if (!r.ok) throw new Error('HTTP '+r.status);
-  return r.json();
-}
-
-// ---------- normalizar MARCO: blanco (#fff) y FONDO NEGRO ----------
-function normalizeFrameSVGWhite(svgText){
-  try{
-    const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
-    const svg = doc.querySelector('svg');
-    if (!svg) return svgText;
-
-    // viewBox / size
-    let vb = svg.getAttribute('viewBox');
-    let W = 0, H = 0;
-    if (vb){
-      const p = vb.trim().split(/\s+/).map(Number);
-      W = p[2]||0; H = p[3]||0;
-    }else{
-      W = parseFloat(svg.getAttribute('width')||'0');
-      H = parseFloat(svg.getAttribute('height')||'0');
-      if (!vb && W>0 && H>0) svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    }
-    const bigArea = W*H;
-
-    // 1) eliminar rects de fondo casi del tamaño total
-    [...doc.querySelectorAll('rect')].forEach(r=>{
-      const w = parseFloat(r.getAttribute('width')||'0');
-      const h = parseFloat(r.getAttribute('height')||'0');
-      const area = w*h;
-      if (bigArea>0 && area/bigArea>0.95){
-        r.parentNode.removeChild(r);
-      }else{
-        r.setAttribute('fill','none');
-        r.removeAttribute('stroke');
-      }
-    });
-
-    // 2) asegurar relleno blanco sin stroke en paths/polygons
-    [...doc.querySelectorAll('path,polygon,polyline,circle,ellipse')].forEach(el=>{
-      el.setAttribute('fill','#ffffff');
-      el.removeAttribute('stroke');
-      if (!el.getAttribute('fill-rule')) el.setAttribute('fill-rule','evenodd');
-      if (!el.getAttribute('clip-rule')) el.setAttribute('clip-rule','evenodd');
-    });
-
-    // 3) insertar fondo negro como PRIMER hijo
-    if (W>0 && H>0){
-      const bg = doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      bg.setAttribute('x','0'); bg.setAttribute('y','0');
-      bg.setAttribute('width', String(W)); bg.setAttribute('height', String(H));
-      bg.setAttribute('fill', '#000000');
-      svg.insertBefore(bg, svg.firstChild);
-    }
-
-    // 4) limpiar estilos que definan background CSS
-    [...doc.querySelectorAll('style')].forEach(s=>{
-      s.textContent = (s.textContent||'').replace(/background\s*:[^;]+;?/gi,'');
-    });
-
-    const ser = new XMLSerializer().serializeToString(doc.documentElement);
-    return ser.startsWith('<svg') ? ser : svgText;
-  }catch{
-    return svgText;
-  }
-}
+// Utilidades compartidas con el laboratorio de etiquetado (mask_lab_core.js)
+import {
+  setLoading,
+  putSVGPreview,
+  downloadSVG,
+  postFormData,
+  normalizeFrameSVGWhite,
+  loadImage,
+} from './mask_lab_core.js';
 
 // ---------- UI refs ----------
 const ui = {
@@ -146,16 +64,6 @@ let isPainting = false;
 const ZOOM_W = 420, ZOOM_H = 420;   // resolución interna del canvas de zoom
 let zoomCenterX = 0, zoomCenterY = 0;
 let zoomFactor  = 4;
-
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
-  });
-}
 
 /** Dibuja foto con overlay según estado + rectángulo amarillo de zoom */
 function renderMaskOverlay() {

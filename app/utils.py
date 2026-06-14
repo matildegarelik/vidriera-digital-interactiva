@@ -21,7 +21,7 @@ def _save_upload(file_storage, subdir: str, prefix: str = "") -> str | None:
     if not file_storage or not getattr(file_storage, "filename", ""):
         return None
 
-    root = "/var/www/html/vidriera/uploads"
+    root = current_app.config['UPLOAD_FOLDER']
     base_dir = Path(root) / subdir
     base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -622,3 +622,280 @@ def _temple_segmentation_vb(img_bgr, close_r=7, min_area=800):
         mask_png=_b64_png_dataurl(mask),
         svg=_mask_to_svg(mask)
     )
+
+
+# =====================================================================
+# === Laboratorio de etiquetado (variantes para acelerar el pintado) ==
+# =====================================================================
+# Clases por píxel (mismo convenio que el frontend mask_lab_core.js):
+LAB_FONDO, LAB_LENTE, LAB_MARCO = 0, 1, 2
+
+
+def _encode_label_map_rgb(labels):
+    """Codifica un mapa de labels int32 (HxW) en un PNG RGB sin pérdida.
+    id = R + G*256 + B*65536. El frontend lo decodifica leyendo píxeles."""
+    labels = labels.astype(np.int64)
+    h, w = labels.shape
+    rgb = np.zeros((h, w, 3), np.uint8)
+    rgb[:, :, 0] = (labels & 0xFF).astype(np.uint8)
+    rgb[:, :, 1] = ((labels >> 8) & 0xFF).astype(np.uint8)
+    rgb[:, :, 2] = ((labels >> 16) & 0xFF).astype(np.uint8)
+    ok, buf = cv.imencode('.png', cv.cvtColor(rgb, cv.COLOR_RGB2BGR))
+    if not ok:
+        return None
+    return "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode('ascii')
+
+
+# ---------------------- A) Superpíxeles (SLIC) ----------------------
+def _slic_superpixels(img_bgr, region_size=25, ruler=20.0, num_iter=10):
+    """Devuelve (labels int32 HxW, n_superpixels). Requiere opencv-contrib (ximgproc)."""
+    ximg = getattr(cv, 'ximgproc', None)
+    if ximg is None:
+        raise RuntimeError(
+            "cv.ximgproc no disponible. Instalá opencv-contrib-python "
+            "(reemplaza a opencv-python)."
+        )
+    lab = cv.cvtColor(img_bgr, cv.COLOR_BGR2LAB)
+    slic = ximg.createSuperpixelSLIC(
+        lab, algorithm=ximg.SLICO,
+        region_size=int(max(8, region_size)), ruler=float(ruler)
+    )
+    slic.iterate(int(num_iter))
+    slic.enforceLabelConnectivity(int(max(8, region_size) // 2))
+    labels = slic.getLabels().astype(np.int32)
+    n = int(slic.getNumberOfSuperpixels())
+    return labels, n
+
+
+def _superpixel_prelabels(labels, n, frame_mask, inner_mask):
+    """Voto mayoritario de cada superpíxel contra las máscaras auto (marco/lente)."""
+    flat = labels.ravel()
+    counts = np.bincount(flat, minlength=n).astype(np.float64)
+    counts[counts == 0] = 1.0
+    frame_bin = (frame_mask > 128).ravel().astype(np.float64)
+    inner_bin = (inner_mask > 128).ravel().astype(np.float64)
+    frac_frame = np.bincount(flat, weights=frame_bin, minlength=n) / counts
+    frac_inner = np.bincount(flat, weights=inner_bin, minlength=n) / counts
+    frac_bg = 1.0 - frac_frame - frac_inner
+
+    pre = np.full(n, LAB_FONDO, np.int32)
+    pre[(frac_frame >= frac_inner) & (frac_frame >= frac_bg)] = LAB_MARCO
+    pre[(frac_inner > frac_frame) & (frac_inner >= frac_bg)] = LAB_LENTE
+    return pre.tolist()
+
+
+def lab_superpixels_payload(img_bgr, region_size=25, ruler=20.0):
+    """Corre la auto-seg para priors + SLIC + pre-etiquetado. Listo para el frontend."""
+    frame_mask, inner_mask = _front_frame_inner_binary(img_bgr)
+    labels, n = _slic_superpixels(img_bgr, region_size, ruler)
+    prelabels = _superpixel_prelabels(labels, n, frame_mask, inner_mask)
+    h, w = labels.shape
+    return {
+        "color": _b64_png_dataurl(cv.cvtColor(img_bgr, cv.COLOR_BGR2RGB)),
+        "labels_png": _encode_label_map_rgb(labels),
+        "n_labels": n,
+        "prelabels": prelabels,
+        "width": w,
+        "height": h,
+    }
+
+
+def _front_frame_inner_binary(img_bgr, **kw):
+    """Versión que devuelve marco/lente como máscaras binarias np.uint8 (0/255).
+    Reutiliza la lógica de _front_segmentation_vb pero sin codificar a PNG."""
+    res = _front_segmentation_vb(img_bgr, **kw)
+    # _front_segmentation_vb codifica a dataURL; decodificamos inner y frame_mask
+    def _decode(dataurl):
+        if not dataurl:
+            return np.zeros(img_bgr.shape[:2], np.uint8)
+        b64 = dataurl.split(',', 1)[1]
+        arr = np.frombuffer(base64.b64decode(b64), np.uint8)
+        m = cv.imdecode(arr, cv.IMREAD_GRAYSCALE)
+        return m if m is not None else np.zeros(img_bgr.shape[:2], np.uint8)
+    inner = _decode(res.get("inner"))
+    frame = _decode(res.get("frame_mask"))
+    return frame, inner
+
+
+# ---------------------- C) Scribbles + watershed ----------------------
+def _scribble_watershed(img_bgr, seeds, radius=6, use_auto=True):
+    """
+    Segmentación por watershed sembrada con scribbles del usuario + priors auto.
+    seeds = {"marco": [[x,y],...], "lente": [[x,y],...], "fondo": [[x,y],...]}
+    Devuelve un PNG (dataURL) donde el canal R = clase (0=fondo,1=lente,2=marco).
+    """
+    h, w = img_bgr.shape[:2]
+    markers = np.zeros((h, w), np.int32)  # 0 = desconocido
+    MK_FONDO, MK_LENTE, MK_MARCO = 1, 2, 3
+
+    if use_auto:
+        frame_mask, inner_mask = _front_frame_inner_binary(img_bgr)
+        k = np.ones((9, 9), np.uint8)
+        core_marco = cv.erode(frame_mask, k, 1)
+        core_lente = cv.erode(inner_mask, k, 1)
+        markers[core_marco > 0] = MK_MARCO
+        markers[core_lente > 0] = MK_LENTE
+    # fondo: borde de la imagen
+    b = max(2, int(min(h, w) * 0.01))
+    markers[:b, :] = MK_FONDO; markers[-b:, :] = MK_FONDO
+    markers[:, :b] = MK_FONDO; markers[:, -b:] = MK_FONDO
+
+    # scribbles del usuario (pisan a los priors)
+    def _draw(points, val):
+        for p in (points or []):
+            try:
+                x, y = int(p[0]), int(p[1])
+            except Exception:
+                continue
+            cv.circle(markers, (x, y), int(radius), val, -1)
+    _draw(seeds.get("fondo"), MK_FONDO)
+    _draw(seeds.get("lente"), MK_LENTE)
+    _draw(seeds.get("marco"), MK_MARCO)
+
+    cv.watershed(img_bgr, markers)  # modifica markers; bordes = -1
+
+    out = np.zeros((h, w), np.uint8)
+    out[markers == MK_LENTE] = LAB_LENTE
+    out[markers == MK_MARCO] = LAB_MARCO
+    # bordes (-1) y desconocidos quedan en FONDO (0)
+    ok, buf = cv.imencode('.png', out)
+    if not ok:
+        return None
+    return "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode('ascii')
+
+
+# ---------------------- D) SAM (MobileSAM por ONNX) ----------------------
+# El export ONNX de samexporter (vietanhdev) espera:
+#   - encoder: imagen HWC, BGR, float32 SIN normalizar (la normalización está
+#     dentro del modelo), con letterbox (escala uniforme, esquina superior izq.)
+#     a la resolución de entrada del encoder.
+#   - decoder: orig_im_size = tamaño de ENTRADA del encoder (no el original);
+#     las máscaras salen en ese frame y se recortan/reescalan al original.
+_SAM_SESSIONS = {"encoder": None, "decoder": None}
+_SAM_CACHE = {}  # model_id -> {emb, orig (h,w), scale, in_hw}
+_SAM_DEFAULT_HW = (684, 1024)  # fallback si el encoder tiene dims dinámicas
+
+
+def _sam_dir():
+    return Path(current_app.root_path) / "ml" / "sam"
+
+
+def _sam_get_sessions():
+    if _SAM_SESSIONS["encoder"] is not None:
+        return _SAM_SESSIONS
+    try:
+        import onnxruntime as ort
+    except Exception as e:
+        raise RuntimeError("onnxruntime no instalado. Ejecutá: pip install onnxruntime") from e
+    d = _sam_dir()
+    enc = d / "mobile_sam.encoder.onnx"
+    dec = d / "mobile_sam.decoder.onnx"
+    if not enc.exists() or not dec.exists():
+        raise RuntimeError(
+            f"Faltan los pesos ONNX de MobileSAM en {d} "
+            "(mobile_sam.encoder.onnx y mobile_sam.decoder.onnx)."
+        )
+    _SAM_SESSIONS["encoder"] = ort.InferenceSession(str(enc), providers=["CPUExecutionProvider"])
+    _SAM_SESSIONS["decoder"] = ort.InferenceSession(str(dec), providers=["CPUExecutionProvider"])
+    return _SAM_SESSIONS
+
+
+def _sam_encoder_hw(enc):
+    """Resolución de entrada del encoder (h,w) leída del modelo; fallback si es dinámica."""
+    shape = enc.get_inputs()[0].shape  # esperado [H, W, 3]
+    try:
+        h = int(shape[0]); w = int(shape[1])
+        if h > 0 and w > 0:
+            return h, w
+    except (TypeError, ValueError):
+        pass
+    return _SAM_DEFAULT_HW
+
+
+def _sam_preprocess(img_bgr, in_h, in_w):
+    """Letterbox BGR float32 (sin normalizar) a (in_h, in_w). Devuelve (img_hwc, scale)."""
+    h, w = img_bgr.shape[:2]
+    scale = min(in_w / w, in_h / h)
+    nh, nw = int(round(h * scale)), int(round(w * scale))
+    resized = cv.resize(img_bgr, (nw, nh), interpolation=cv.INTER_LINEAR)
+    canvas = np.zeros((in_h, in_w, 3), np.float32)
+    canvas[:nh, :nw, :] = resized.astype(np.float32)  # BGR, esquina sup. izq.
+    return canvas, scale
+
+
+def _sam_embed(model_id, img_bgr):
+    sess = _sam_get_sessions()
+    enc = sess["encoder"]
+    in_h, in_w = _sam_encoder_hw(enc)
+    inp, scale = _sam_preprocess(img_bgr, in_h, in_w)
+    feed = {enc.get_inputs()[0].name: inp}
+    emb = enc.run(None, feed)[0]
+    if emb.ndim == 3:               # [256,64,64] -> [1,256,64,64] para el decoder
+        emb = emb[None, ...]
+    _SAM_CACHE[str(model_id)] = {
+        "emb": emb,
+        "orig": (int(img_bgr.shape[0]), int(img_bgr.shape[1])),
+        "scale": float(scale),
+        "in_hw": (in_h, in_w),
+    }
+    return True
+
+
+def _sam_decode(model_id, points, point_labels):
+    sess = _sam_get_sessions()
+    cache = _SAM_CACHE.get(str(model_id))
+    if cache is None:
+        raise RuntimeError("No hay embedding para este modelo. Llamá primero a /embed.")
+    emb = cache["emb"]
+    oh, ow = cache["orig"]
+    scale = cache["scale"]
+    in_h, in_w = cache["in_hw"]
+
+    # puntos: del frame original al frame de entrada del encoder (escala uniforme)
+    pts = np.array(points, np.float32).reshape(-1, 2) * scale
+    lbls = np.array(point_labels, np.float32).reshape(-1)
+    # punto de relleno (label -1) requerido por el export ONNX de SAM
+    pts = np.concatenate([pts, np.zeros((1, 2), np.float32)], axis=0)[None, :, :]
+    lbls = np.concatenate([lbls, np.array([-1], np.float32)])[None, :]
+
+    dec = sess["decoder"]
+    feed = {
+        "image_embeddings": emb.astype(np.float32),
+        "point_coords": pts.astype(np.float32),
+        "point_labels": lbls.astype(np.float32),
+        "mask_input": np.zeros((1, 1, 256, 256), np.float32),
+        "has_mask_input": np.zeros(1, np.float32),
+        # el decoder produce máscaras en el frame de entrada del encoder
+        "orig_im_size": np.array([in_h, in_w], np.float32),
+    }
+    masks, iou, *_ = dec.run(None, feed)
+    iou_flat = np.asarray(iou).reshape(-1)
+    best = int(np.argmax(iou_flat))
+    m = masks[0, best]  # (in_h, in_w) logits
+
+    # recortar la región válida (sin letterbox) y reescalar al tamaño original
+    nh, nw = int(round(oh * scale)), int(round(ow * scale))
+    nh = min(nh, m.shape[0]); nw = min(nw, m.shape[1])
+    valid = m[:nh, :nw]
+    binary = (valid > 0).astype(np.uint8) * 255
+    mask = cv.resize(binary, (ow, oh), interpolation=cv.INTER_NEAREST)
+
+    debug = {
+        "masks_shape": list(np.asarray(masks).shape),
+        "iou": [round(float(v), 3) for v in iou_flat.tolist()],
+        "best": best,
+        "logit_min": round(float(m.min()), 3),
+        "logit_max": round(float(m.max()), 3),
+        "logit_mean": round(float(m.mean()), 3),
+        "pos_frac_full": round(float((m > 0).mean()), 4),
+        "pos_frac_valid": round(float((valid > 0).mean()), 4),
+        "in_hw": [in_h, in_w], "orig": [oh, ow], "scale": round(scale, 4),
+        "crop_nh_nw": [nh, nw],
+        "points_scaled": np.round(pts[0, :-1] , 1).tolist(),
+    }
+
+    ok, buf = cv.imencode('.png', mask)
+    if not ok:
+        return {"mask_png": None, "debug": debug}
+    dataurl = "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode('ascii')
+    return {"mask_png": dataurl, "debug": debug}

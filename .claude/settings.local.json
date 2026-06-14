@@ -4,7 +4,9 @@
       "Bash(dir C:UsersusuarioDocumentsvidriera-digital-interactivaapp /s /b 2)",
       "Bash(nul)",
       "Bash(find:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(node --check app/static/js/lab_sam.js)",
+      "Bash(python -c ' *)"
     ],
     "deny": [],
     "ask": []

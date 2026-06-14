@@ -1,0 +1,25 @@
+{% extends 'helpers_admin/_lab_base.html' %}
+{% block tech_title %}Lab – Scribbles + auto{% endblock %}
+
+{% block tech_panel %}
+<div class="grp">
+  <h3>✏️ Scribbles + watershed</h3>
+  <p class="hint">Elegí marco/lente/fondo y <b>arrastrá unos trazos en el canvas de zoom</b> sobre cada zona
+     (el izquierdo mueve el zoom). Después tocá <b>Procesar</b>: el server propaga respetando bordes.</p>
+  <label>Grosor de semilla (server) <span id="scRadiusVal">6</span>px</label>
+  <input id="scRadius" type="range" min="2" max="20" step="1" value="6">
+  <div class="row">
+    <label style="display:inline-flex; gap:6px; align-items:center;">
+      <input type="checkbox" id="scUseAuto" checked> Usar priors de auto-segmentación
+    </label>
+  </div>
+  <div class="row">
+    <button id="scRun" class="primary">Procesar (watershed)</button>
+    <button id="scClear">Limpiar scribbles</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block tech_script %}
+<script type="module" src="{{ url_for('static', filename='js/lab_combinado.js') }}"></script>
+{% endblock %}

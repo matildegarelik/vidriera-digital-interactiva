@@ -79,14 +79,19 @@ export function bakeWorldTransforms(root) {
       geom.applyMatrix4(o.matrixWorld);   // horneá posición/rot/escala (incluye espejo)
       geom.computeVertexNormals();
 
-      // material clon simple (evita referencias compartidas)
-      const mat = o.material && o.material.clone ? o.material.clone() : o.material;
-      if (mat) mat.side = THREE.DoubleSide;
+      // material clon simple (evita referencias compartidas).
+      // Soporta arrays (caras + espesor) que vienen de los grupos del Extrude.
+      const cloneMat = m => { const c = (m && m.clone) ? m.clone() : m; if (c) c.side = THREE.DoubleSide; return c; };
+      const mat = Array.isArray(o.material) ? o.material.map(cloneMat) : cloneMat(o.material);
 
       const mesh = new THREE.Mesh(geom, mat);
       mesh.position.set(0,0,0);
       mesh.rotation.set(0,0,0);
       mesh.scale.set(1,1,1);
+      // Preservar el rol (marco/lentes/patilla) para que los visores puedan
+      // aplicar efectos por parte que no viajan en glTF (ej. envMapIntensity).
+      mesh.name = o.name || '';
+      mesh.userData = { ...(o.userData || {}) };
       out.add(mesh);
     }
   });

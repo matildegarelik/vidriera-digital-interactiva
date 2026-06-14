@@ -33,8 +33,7 @@
       </div>
     </div>
 
-
-    <h3>Lentes</h3>
+    <h3>Posicionamiento</h3>
     <div class="grp">
       <label>Escala lentes</label>
       <input id="glassScale" type="range" min="0.6" max="1.6" step="0.01" value="1.00">
@@ -44,17 +43,54 @@
       <input id="lensOffsetY" type="range" min="-10" max="10" step="0.001" value="0.0">
       <label>Lentes Offset Z (Prof.)</label>
       <input id="lensOffsetZ" type="range" min="-0.02" max="0.02" step="0.001" value="0.0">
-      
     </div>
 
-
-    <h3>Bisagras & Patillas</h3>
     <div class="grp">
       <label>Bisagra X</label><input id="hingeX" type="range" min="0.03" max="1.2" step="0.001" value="0.6">
       <label>Bisagra Y</label><input id="hingeY" type="range" min="-0.03" max="0.40" step="0.001" value="0.02">
       <label>Bisagra Z</label><input id="hingeZ" type="range" min="-0.03" max="0.03" step="0.001" value="0.000">
       <label>Rotación patilla (°)</label><input id="rotPat" type="range" min="0" max="180" step="1" value="90">
       <label>Escala patilla</label><input id="scalePat" type="range" min="0.6" max="1.6" step="0.01" value="1.00">
+    </div>
+
+    <div class="grp">
+      <div class="row">
+        <button id="resetBtn" class="secondary">Restablecer</button>
+      </div>
+    </div>
+
+    <h3>Efectos renderizado</h3>
+    <div class="grp">
+      <label>Fondo</label>
+      <select id="bgColor">
+        <option value="black">Negro</option>
+        <option value="white">Blanco</option>
+      </select>
+      <label>Exposición</label>
+      <input id="exposure" type="range" min="0.2" max="2.0" step="0.01" value="1.0">
+      <label>Luz ambiente</label>
+      <input id="ambient" type="range" min="0" max="2" step="0.01" value="0.85">
+      <label>Luz direccional</label>
+      <input id="directional" type="range" min="0" max="2" step="0.01" value="0.6">
+      <label>Curvatura frente</label>
+      <input id="curveFront" type="range" min="0" max="0.9" step="0.01" value="0">
+    </div>
+
+    <div class="grp">
+      <label>Parte a configurar</label>
+      <select id="fxPart">
+        <option value="marco">Marco</option>
+        <option value="lentes">Lentes</option>
+        <option value="patilla">Patilla</option>
+      </select>
+      <label>Espesor (mm)</label>
+      <input id="fxDepth" type="range" min="0.2" max="2.0" step="0.05" value="1.0">
+      <label>Rugosidad</label>
+      <input id="fxRough" type="range" min="0" max="1" step="0.01" value="0.7">
+      <label>Metalness</label>
+      <input id="fxMetal" type="range" min="0" max="1" step="0.01" value="0.1">
+      <label>Entorno (reflejos)</label>
+      <input id="fxEnv" type="range" min="0" max="2" step="0.01" value="1.0">
     </div>
 
     <h3>Exportar</h3>
@@ -81,6 +117,7 @@
 
   window.FRONT_IMG_URL  = "{{ front_img_url }}";
   window.TEMPLE_IMG_URL = "{{ temple_img_url }}";
+  window.RENDER_CONFIG  = {{ render_config|tojson if render_config else '{}' }};
 </script>
 
 <!-- HELPERS -->
@@ -92,8 +129,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { SVGLoader }   from "three/examples/jsm/loaders/SVGLoader.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
-import { setLoading, makePivotAtHinge, clonePatillasAlways, saveBufferAsFile, bakeWorldTransforms , fileToDataURL, makeTintRGBAFromAlphaRows, 
+import { setLoading, makePivotAtHinge, clonePatillasAlways, saveBufferAsFile, bakeWorldTransforms , fileToDataURL, makeTintRGBAFromAlphaRows,
   bgrToHex, colorToInt, bindExportGLB, svgTextToTexture, urlToDataURL, imageURLToTexture } from '{{ url_for('static', filename='js/helpers_3d.js') }}';
 
 const front = { frameText:'', glassText:'', tex:null };
@@ -123,7 +161,7 @@ preloadIfAvailable();
 
 
 
-function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 0xdddddd, role = 'generic', tex = null}){
+function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 0xdddddd, role = 'generic', tex = null, edgeColor = null}){
   // normalización mínima de namespaces
   let txt = svgText
     .replace(/<\s*(\/?)\s*[a-zA-Z_][\w.-]*:/g, '<$1')
@@ -188,10 +226,19 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
            /rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)/.test(f);
   };
 
+  // Borde redondeado (bevel) para marco/patilla; el vidrio queda recto y fino.
+  const bevelOn = role !== 'glass';
+  const bevelSize      = bevelOn ? Math.min(depth * 0.2, refW * 0.006) : 0;
+  const bevelThickness = bevelOn ? depth * 0.3 : 0;
+
   // UVs “coherentes” en XY (sirve para mapear la textura)
   const opts = {
-    depth,
-    bevelEnabled:false,
+    depth: bevelOn ? Math.max(0.001, depth - bevelThickness * 2) : depth,
+    bevelEnabled: bevelOn,
+    bevelThickness,
+    bevelSize,
+    bevelOffset: 0,
+    bevelSegments: 3,
     curveSegments,
     UVGenerator: THREE.ExtrudeGeometry.WorldUVGenerator
   };
@@ -266,7 +313,7 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
     geom.attributes.uv.needsUpdate = true;
   }
   // --- FIN DEL REEMPLAZO ---
-  // material base (map SIEMPRE si viene tex)
+  // material de las CARAS (frente/dorso): textura de la foto si viene tex
   const baseMat = new THREE.MeshStandardMaterial({
     color: tex ? 0xffffff : color,
     metalness:0.1,
@@ -274,6 +321,20 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
     side:THREE.DoubleSide,
     map: tex || null
   });
+
+  // material del ESPESOR (paredes laterales): color sólido del marco/patilla,
+  // así el canto no muestra el borde claro de la foto.
+  const sideCol = (edgeColor != null) ? edgeColor : (tex ? 0x222222 : color);
+  const sideMat = new THREE.MeshStandardMaterial({
+    color: sideCol,
+    metalness:0.1,
+    roughness:0.7,
+    side:THREE.DoubleSide
+  });
+
+  // ExtrudeGeometry asigna material 0 a las caras y material 1 a las paredes.
+  // Si hay textura usamos [caras, espesor]; si no, un único material.
+  const meshMat = () => tex ? [baseMat.clone(), sideMat.clone()] : baseMat.clone();
 
   // ===========================
   //      FRONT (MARCO)
@@ -310,7 +371,7 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
     geom.computeVertexNormals();
     applyPlanarUV(geom, role);
 
-    const mesh = new THREE.Mesh(geom, baseMat.clone());
+    const mesh = new THREE.Mesh(geom, meshMat());
     group.add(mesh);
 
     // centrar el grupo (como ya hacías)
@@ -342,7 +403,7 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
       const g = new THREE.ExtrudeGeometry(shape, opts);
       g.scale(S,-S,S); g.computeVertexNormals();
       applyPlanarUV(g,role);
-      group.add(new THREE.Mesh(g, baseMat.clone()));
+      group.add(new THREE.Mesh(g, meshMat()));
     }
   }
 
@@ -363,7 +424,7 @@ function extrudeFromSVGText(svgText,{depth = 0.015, curveSegments = 12, color = 
       const g=new THREE.ExtrudeGeometry(best, opts);
       g.scale(S,-S,S); g.computeVertexNormals();
       applyPlanarUV(g,role);
-      group.add(new THREE.Mesh(g, baseMat.clone()));
+      group.add(new THREE.Mesh(g, meshMat()));
     }
   }
 
@@ -385,22 +446,173 @@ const ui = {
   scalePat: document.getElementById('scalePat'),
   build: document.getElementById('build'),
   fit:   document.getElementById('fit'),
+  reset: document.getElementById('resetBtn'),
+  bgColor: document.getElementById('bgColor'),
+  curveFront: document.getElementById('curveFront'),
+  exposure: document.getElementById('exposure'),
+  ambient: document.getElementById('ambient'),
+  directional: document.getElementById('directional'),
+  // Efectos por parte
+  fxPart: document.getElementById('fxPart'),
+  fxDepth: document.getElementById('fxDepth'),
+  fxRough: document.getElementById('fxRough'),
+  fxMetal: document.getElementById('fxMetal'),
+  fxEnv: document.getElementById('fxEnv'),
 };
+
+// Estado de efectos/espesor POR PARTE (marco/lentes/patilla)
+const PART_BY_ROLE = { front: 'marco', glass: 'lentes', side: 'patilla' };
+const DEPTH_RANGE = {
+  marco:   { min: 0.2,  max: 2.0, step: 0.05 },
+  lentes:  { min: 0.05, max: 0.7, step: 0.02 },
+  patilla: { min: 0.2,  max: 2.0, step: 0.05 },
+};
+const DEFAULT_FX = {
+  marco:   { depth: 1.0, rough: 0.7, metal: 0.1, env: 1.0 },
+  lentes:  { depth: 0.3, rough: 0.1, metal: 0.0, env: 1.0 },
+  patilla: { depth: 1.0, rough: 0.7, metal: 0.1, env: 1.0 },
+};
+const DEFAULT_GLOBAL = { background:'black', exposure:1.0, ambient:0.85, directional:0.6, curveFront:0 };
+const fx = JSON.parse(JSON.stringify(DEFAULT_FX));
+// ¿el modelo ya tenía posición guardada? (define si auto-acomodar o respetar lo guardado)
+let hasSavedPosition = false;
 
 
 const canvas = document.getElementById('canvas3d');
 const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;   // igual que los visores
+renderer.toneMappingExposure = 1.0;
+
+const BG_COLORS = { black: 0x141414, white: 0xffffff };
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x141414);
+scene.background = new THREE.Color(BG_COLORS.black);
+
+// Entorno (IBL) para reflejos realistas en los materiales PBR
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
 const camera = new THREE.PerspectiveCamera(45,1,0.001,100);
 camera.position.set(0,0,0.35);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-scene.add(new THREE.AmbientLight(0xffffff,0.7));
-const dir = new THREE.DirectionalLight(0xffffff,0.9); dir.position.set(1,1,1); scene.add(dir);
+const ambientLight = new THREE.AmbientLight(0xffffff,0.85); scene.add(ambientLight);
+const dir = new THREE.DirectionalLight(0xffffff,0.6); dir.position.set(1,1,1); scene.add(dir);
+
+// ----- iluminación global (exposición + luces) -----
+function applyGlobalLighting(){
+  renderer.toneMappingExposure = parseFloat(ui.exposure.value);
+  ambientLight.intensity = parseFloat(ui.ambient.value);
+  dir.intensity = parseFloat(ui.directional.value);
+}
+
+// ----- materiales POR PARTE (rugosidad/metalness/entorno) -----
+function applyMaterials(){
+  assembled.traverse(o => {
+    if (!o.isMesh || !o.material) return;
+    const part = PART_BY_ROLE[o.userData?.role];
+    if (!part) return;
+    const cfg = fx[part];
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    mats.forEach(m => {
+      if (!m) return;
+      m.envMapIntensity = cfg.env;
+      m.roughness = cfg.rough;
+      m.metalness = cfg.metal;
+      m.needsUpdate = true;
+    });
+  });
+}
+
+// Se sigue llamando applyLighting desde buildModel: aplica todo de una.
+function applyLighting(){ applyGlobalLighting(); applyMaterials(); }
+
+function applyBackground(){
+  const col = new THREE.Color(BG_COLORS[ui.bgColor.value] ?? BG_COLORS.black);
+  scene.background = col;
+  renderer.setClearColor(col, 1);
+}
+
+// Carga en los sliders por-parte los valores de la parte seleccionada
+function loadFxControls(){
+  const part = ui.fxPart.value;
+  const cfg = fx[part];
+  const r = DEPTH_RANGE[part];
+  ui.fxDepth.min = r.min; ui.fxDepth.max = r.max; ui.fxDepth.step = r.step;
+  ui.fxDepth.value = cfg.depth;
+  ui.fxRough.value = cfg.rough;
+  ui.fxMetal.value = cfg.metal;
+  ui.fxEnv.value   = cfg.env;
+}
+
+// Inyectar defaults guardados (render_config) en los controles
+function initControlsFromConfig(){
+  const rc = window.RENDER_CONFIG || {};
+  if (rc.background) ui.bgColor.value = rc.background;
+  if (rc.exposure != null) ui.exposure.value = rc.exposure;
+  if (rc.ambient != null) ui.ambient.value = rc.ambient;
+  if (rc.directional != null) ui.directional.value = rc.directional;
+  if (rc.curveFront != null) ui.curveFront.value = rc.curveFront;
+
+  // Efectos por parte (esquema nuevo: rc.fx.{marco,lentes,patilla})
+  if (rc.fx) {
+    for (const p of ['marco','lentes','patilla']) {
+      if (rc.fx[p]) Object.assign(fx[p], rc.fx[p]);
+    }
+  } else {
+    // Compatibilidad con el esquema viejo (plano)
+    if (rc.depthFrame  != null) fx.marco.depth   = rc.depthFrame;
+    if (rc.depthGlass  != null) fx.lentes.depth  = rc.depthGlass;
+    if (rc.depthTemple != null) fx.patilla.depth = rc.depthTemple;
+    if (rc.frameRough  != null) fx.marco.rough   = rc.frameRough;
+    if (rc.frameMetal  != null) fx.marco.metal   = rc.frameMetal;
+    if (rc.envIntensity!= null) { fx.marco.env = fx.lentes.env = fx.patilla.env = rc.envIntensity; }
+  }
+
+  // Clamp de espesores al rango vigente (por si vienen de una config previa)
+  for (const p of ['marco','lentes','patilla']) {
+    const r = DEPTH_RANGE[p];
+    fx[p].depth = Math.min(Math.max(fx[p].depth, r.min), r.max);
+  }
+
+  // Posición guardada (lentes + patillas). Si existe, se respeta en vez de auto-acomodar.
+  const POS_IDS = ['glassScale','lensOffsetX','lensOffsetY','lensOffsetZ','hingeX','hingeY','hingeZ','rotPat','scalePat'];
+  if (rc.position) {
+    hasSavedPosition = true;
+    for (const id of POS_IDS) {
+      if (rc.position[id] != null) setSlider(ui[id], rc.position[id]);
+    }
+  }
+
+  loadFxControls();
+  applyBackground();
+  applyGlobalLighting();
+}
+initControlsFromConfig();
+
+// Doblar geometría alrededor del eje Y (curvatura envolvente del frente),
+// tomando como pivote el centro X de la propia geometría para que sea simétrica.
+function bendGeometryY(geom, k){
+  if (!k || Math.abs(k) < 1e-4) return;
+  geom.computeBoundingBox();
+  const cx = (geom.boundingBox.min.x + geom.boundingBox.max.x) * 0.5;
+  const pos = geom.attributes.position;
+  for (let i=0; i<pos.count; i++){
+    const x = pos.getX(i) - cx, z = pos.getZ(i);
+    const ang = x * k;
+    pos.setX(i, cx + Math.sin(ang) / k);
+    pos.setZ(i, z + (Math.cos(ang) - 1) / k);
+  }
+  pos.needsUpdate = true;
+  geom.computeVertexNormals();
+}
+
+function bendGroup(group, k){
+  if (!k || Math.abs(k) < 1e-4) return;
+  group.traverse(o => { if (o.isMesh && o.geometry) bendGeometryY(o.geometry, k); });
+}
 
 function resize(){ const w=canvas.clientWidth, h=canvas.clientHeight||300; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
 new ResizeObserver(resize).observe(canvas);
@@ -418,14 +630,12 @@ function alignLensesMidpointToFrame(){
   const cF = new THREE.Vector3();
   new THREE.Box3().setFromObject(marco).getCenter(cF);
 
-  // centro de los lentes (punto medio de ambos pivots)
+  // centro de los lentes (punto medio de sus posiciones base)
   let cG = null;
   if (lensPivotL && lensPivotR) {
-    cG = new THREE.Vector3().addVectors(lensPivotL.position, lensPivotR.position).multiplyScalar(0.5);
+    cG = new THREE.Vector3().addVectors(lensOriginalPosL, lensOriginalPosR).multiplyScalar(0.5);
   } else if (lensPivotL || lensPivotR) {
-    // fallback si solo hay uno
-    const p = lensPivotL || lensPivotR;
-    cG = p.position.clone();
+    cG = (lensPivotL ? lensOriginalPosL : lensOriginalPosR).clone();
   } else {
     return;
   }
@@ -433,9 +643,10 @@ function alignLensesMidpointToFrame(){
   // delta para alinear centros
   const delta = cF.clone().sub(cG);
 
-  // mover ambos pivots por la misma delta (no rompe su separación relativa)
-  if (lensPivotL) lensPivotL.position.add(delta);
-  if (lensPivotR) lensPivotR.position.add(delta);
+  // Bakeamos el desplazamiento en las posiciones "originales": updateLensTransforms
+  // parte de ellas, así la alineación con el marco se conserva (antes se deshacía).
+  lensOriginalPosL.add(delta);
+  lensOriginalPosR.add(delta);
 }
 
 function fitCameraToObject(obj, offset=1.25){
@@ -479,6 +690,49 @@ function positionPatillas(){
   patillaL.position.set(-hx,hy,hz); patillaR.position.set(hx,hy,hz);
 }
 
+// Asigna un valor a un slider, ampliando su rango si el valor cae fuera.
+function setSlider(input, val){
+  if (input.min !== '' && val < parseFloat(input.min)) input.min = String(val);
+  if (input.max !== '' && val > parseFloat(input.max)) input.max = String(val);
+  input.value = val;
+}
+
+// Acomodo geométrico automático: calcula bisagras/escala/lentes desde los
+// bounding boxes reales para que las piezas arranquen ensambladas.
+function autoArrange(){
+  if(!marco) return;
+  const fb = new THREE.Box3().setFromObject(marco);
+  const fc = fb.getCenter(new THREE.Vector3());
+  const fsize = fb.getSize(new THREE.Vector3());
+  const hw = fsize.x * 0.5, hh = fsize.y * 0.5;
+
+  // Bisagra: borde externo (X), zona alta del marco (Y) y frente del marco (Z),
+  // para que la patilla nazca en la esquina superior-externa y se pliegue hacia atrás.
+  setSlider(ui.hingeX, +(fc.x + hw).toFixed(3));
+  setSlider(ui.hingeY, +(fc.y + hh * 0.65).toFixed(3));
+  setSlider(ui.hingeZ, +fb.max.z.toFixed(3));
+  setSlider(ui.rotPat, 90);
+
+  // Escala patilla: que su alto ≈ alto del marco
+  if (patillaL){
+    const pb = new THREE.Box3().setFromObject(patillaL);
+    const ph = pb.getSize(new THREE.Vector3()).y || 1;
+    let s = (fsize.y * 0.9) / ph;
+    s = Math.min(Math.max(s, 0.3), 2.5);
+    setSlider(ui.scalePat, +s.toFixed(3));
+  }
+
+  // Lentes: centradas en el marco, sin offset ni reescala
+  setSlider(ui.glassScale, 1.0);
+  setSlider(ui.lensOffsetX, 0);
+  setSlider(ui.lensOffsetY, 0);
+  setSlider(ui.lensOffsetZ, 0);
+
+  alignLensesMidpointToFrame();
+  updateLensTransforms();
+  positionPatillas();
+}
+
 function getSvgSize(svgText){
   const vb = svgText.match(/\bviewBox\s*=\s*"([\d.\s\-eE,]+)"/i);
   if (vb) {
@@ -490,8 +744,35 @@ function getSvgSize(svgText){
   return { w, h };
 }
 
+// Color representativo de una textura (para pintar el espesor del mismo tono
+// que el marco/patilla). Promedia píxeles salteando fondo blanco y transparentes.
+function averageTextureColor(tex){
+  try {
+    const img = tex?.image;
+    if (!img || !img.width) return new THREE.Color(0x222222);
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    let r=0, gg=0, b=0, n=0;
+    const step = 4 * 64; // submuestreo para performance
+    for (let i=0; i<d.length; i+=step){
+      const A=d[i+3]; if (A < 16) continue;
+      const R=d[i], G=d[i+1], B=d[i+2];
+      if (R>235 && G>235 && B>235) continue; // saltar fondo blanco
+      r+=R; gg+=G; b+=B; n++;
+    }
+    if (!n) return new THREE.Color(0x222222);
+    // un poco más oscuro para que el canto lea como material macizo
+    return new THREE.Color((r/n)/255*0.85, (gg/n)/255*0.85, (b/n)/255*0.85);
+  } catch (e) {
+    return new THREE.Color(0x222222);
+  }
+}
 
-async function buildModel(){
+
+async function buildModel({ refit = true, arrange = true } = {}){
   if(!front.frameText || !front.glassText || !side.text){ alert('Cargá los 3 SVGs primero.'); return; }
     assembled.clear(); marco=patillaL=patillaR=null;
   //console.log('front.tex size', front.tex.image.width, front.tex.image.height);
@@ -526,27 +807,44 @@ async function buildModel(){
 
 
 
-  const DEPTH_FRONT = 1.5;
-  const DEPTH_SIDE = 1.2;
+  // Espesores (mm) y curvatura desde los controles.
+  // El depth de ExtrudeGeometry está en px del SVG y luego se multiplica por S
+  // (px->m). Convertimos mm->px asumiendo ~140mm de ancho real del frente/patilla
+  // para que el espesor en mm sea fiel y visible.
+  const DEPTH_FRONT = fx.marco.depth;
+  const DEPTH_SIDE  = fx.patilla.depth;
+  const DEPTH_GLASS = fx.lentes.depth;
   const CURVE_SEG = 12;
+  const curveK = parseFloat(ui.curveFront.value);
+  const mmToPxFront = (getSvgSize(front.frameText).w || 1024) / 140;
+  const mmToPxSide  = (getSvgSize(side.text).w || 1024) / 140;
+
+  // Color del espesor = tono representativo de la foto de cada parte
+  const edgeColorFront = front.tex ? averageTextureColor(front.tex) : null;
+  const edgeColorSide  = side.tex  ? averageTextureColor(side.tex)  : null;
 
 
   const frameGroup = extrudeFromSVGText(front.frameText, {
-    depth: parseFloat(DEPTH_FRONT)/100.0,
+    depth: DEPTH_FRONT * mmToPxFront,
     curveSegments: parseInt(CURVE_SEG),
     role: 'front',
-    tex: front.tex
+    tex: front.tex,
+    edgeColor: edgeColorFront
   });
   marco = frameGroup;
+  frameGroup.traverse(o => { if (o.isMesh) o.userData.role = 'front'; });
+  bendGroup(frameGroup, curveK);
 
   assembled.add(frameGroup)
 
   const glassGroup = extrudeFromSVGText(front.glassText, {
-    depth: Math.max(0.0008, parseFloat(DEPTH_FRONT)/100.0*0.12),
+    depth: Math.max(0.4, DEPTH_GLASS * mmToPxFront),
     curveSegments: parseInt(CURVE_SEG),
     color: 0x999999,
     role: 'glass'
   });
+  glassGroup.traverse(o => { if (o.isMesh) o.userData.role = 'glass'; });
+  bendGroup(glassGroup, curveK);
 
   // Polarizado
   try {
@@ -653,16 +951,25 @@ async function buildModel(){
  }
 
   const base = extrudeFromSVGText(side.text, {
-    depth: parseFloat(DEPTH_SIDE)/100.0,
+    depth: DEPTH_SIDE * mmToPxSide,
     curveSegments: parseInt(CURVE_SEG),
     role: 'side',
-    tex: side.tex
+    tex: side.tex,
+    edgeColor: edgeColorSide
   });
   const { L, R } = clonePatillasAlways(base, { mirrorRight:true });
   patillaL=L; patillaR=R; assembled.add(patillaL, patillaR);
+  [patillaL, patillaR].forEach(p => p.traverse(o => { if (o.isMesh) o.userData.role = 'side'; }));
 
-  alignLensesMidpointToFrame(); updateLensTransforms(); 
-  positionPatillas(); fitCameraToObject(assembled);
+  alignLensesMidpointToFrame();
+  if (arrange && !hasSavedPosition) {
+    autoArrange();          // sin config previa: ensambla según tamaños reales
+  } else {
+    updateLensTransforms(); // respeta los valores actuales (guardados o ajustados)
+    positionPatillas();
+  }
+  applyLighting();          // exposición/env/rugosidad según controles
+  if (refit) fitCameraToObject(assembled);
 }
 
 ui.build.onclick = async ()=> {
@@ -676,7 +983,65 @@ ui.build.onclick = async ()=> {
 
   ['glassScale', 'lensOffsetX', 'lensOffsetY', 'lensOffsetZ']
     .forEach(id=>document.getElementById(id).addEventListener(ev, updateLensTransforms));
+
+  // Iluminación global: aplicación en vivo
+  ['exposure','ambient','directional']
+    .forEach(id=>document.getElementById(id).addEventListener(ev, applyGlobalLighting));
 });
+
+// Fondo
+ui.bgColor.addEventListener('change', applyBackground);
+
+// Espesor / curvatura: rehornean la geometría → rebuild con debounce
+let _rebuildT = null;
+function scheduleRebuild(){
+  clearTimeout(_rebuildT);
+  _rebuildT = setTimeout(async () => {
+    if (!front.frameText || !front.glassText || !side.text) return;
+    setLoading(true);
+    // No re-encuadrar ni re-acomodar: solo rehornear con el nuevo espesor/curvatura
+    try { await buildModel({ refit:false, arrange:false }); } finally { setLoading(false); }
+  }, 180);
+}
+ui.curveFront.addEventListener('input', scheduleRebuild);
+
+// Efectos por parte: cambiar de parte recarga los sliders con sus valores
+ui.fxPart.addEventListener('change', loadFxControls);
+
+// Materiales por parte (en vivo)
+['fxRough','fxMetal','fxEnv'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    const part = ui.fxPart.value;
+    fx[part].rough = parseFloat(ui.fxRough.value);
+    fx[part].metal = parseFloat(ui.fxMetal.value);
+    fx[part].env   = parseFloat(ui.fxEnv.value);
+    applyMaterials();
+  });
+});
+
+// Espesor por parte: actualiza el estado y rehornea
+ui.fxDepth.addEventListener('input', () => {
+  fx[ui.fxPart.value].depth = parseFloat(ui.fxDepth.value);
+  scheduleRebuild();
+});
+
+// Restablecer: vuelve efectos/espesores a default y re-acomoda las piezas
+function resetAll(){
+  ui.bgColor.value     = DEFAULT_GLOBAL.background;
+  ui.exposure.value    = DEFAULT_GLOBAL.exposure;
+  ui.ambient.value     = DEFAULT_GLOBAL.ambient;
+  ui.directional.value = DEFAULT_GLOBAL.directional;
+  ui.curveFront.value  = DEFAULT_GLOBAL.curveFront;
+  for (const p of ['marco','lentes','patilla']) Object.assign(fx[p], DEFAULT_FX[p]);
+  loadFxControls();
+  applyBackground();
+  applyGlobalLighting();
+  hasSavedPosition = false;          // fuerza auto-acomodo
+  setLoading(true);
+  buildModel({ refit:true, arrange:true }).finally(()=>setLoading(false));
+}
+ui.reset.addEventListener('click', (e)=>{ e.preventDefault(); resetAll(); });
+ui.fit?.addEventListener('click', (e)=>{ e.preventDefault(); fitCameraToObject(assembled); });
 
 // Carga de los 3 SVGs
 const readText = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsText(f); });
@@ -719,6 +1084,34 @@ window.buildGLB = async () => {
   return new Blob([result], { type: 'model/gltf-binary' });
 };
 
+// Config de iluminación/escena que NO viaja en el GLB y se persiste aparte.
+// Los materiales por parte (rugosidad/metalness/entorno) se guardan en fx
+// para que los visores los repliquen; el espesor queda horneado en la geometría.
+window.collectRenderConfig = () => ({
+  background:  ui.bgColor.value,
+  exposure:    parseFloat(ui.exposure.value),
+  ambient:     parseFloat(ui.ambient.value),
+  directional: parseFloat(ui.directional.value),
+  curveFront:  parseFloat(ui.curveFront.value),
+  toneMapping: 'aces',
+  fx: {
+    marco:   { ...fx.marco },
+    lentes:  { ...fx.lentes },
+    patilla: { ...fx.patilla },
+  },
+  position: {
+    glassScale:  parseFloat(ui.glassScale.value),
+    lensOffsetX: parseFloat(ui.lensOffsetX.value),
+    lensOffsetY: parseFloat(ui.lensOffsetY.value),
+    lensOffsetZ: parseFloat(ui.lensOffsetZ.value),
+    hingeX:      parseFloat(ui.hingeX.value),
+    hingeY:      parseFloat(ui.hingeY.value),
+    hingeZ:      parseFloat(ui.hingeZ.value),
+    rotPat:      parseFloat(ui.rotPat.value),
+    scalePat:    parseFloat(ui.scalePat.value),
+  }
+});
+
 </script>
 
 <script>
@@ -747,6 +1140,9 @@ window.buildGLB = async () => {
 
       const fd = new FormData();
       fd.append('glb', new File([blob], `model_${modelId}.glb`, { type: 'model/gltf-binary' }));
+      if (typeof window.collectRenderConfig === 'function') {
+        fd.append('render_config', JSON.stringify(window.collectRenderConfig()));
+      }
 
       // posteamos a la MISMA ruta en la que estamos (/_admin_helpers/svgs_to_glb/<id>)
       const resp = await fetch(window.location.pathname, { method: 'POST', body: fd });
